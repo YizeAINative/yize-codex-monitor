@@ -71,6 +71,7 @@ namespace CodexFloat {
             try{var state=Json.Serializer().Deserialize<SavedState>(Json.SharedText(statePath));foreach(var s in state.Sessions){s.Platform="claude";sessions[s.Id]=s;}}catch{}
         }
         public List<Session> Snapshot(){lock(gate)return sessions.Values.Where(s=>s.Visible&&allowed(s.Id)).Select(s=>s.Copy()).ToList();}
+        public List<Session> CompletedSnapshot(){lock(gate)return sessions.Values.Where(s=>s.Status=="completed"&&allowed(s.Id)&&(s.Visible||s.DismissedTurn!="")).Select(s=>s.Copy()).ToList();}
         public void ClearFinished(){lock(gate){foreach(var s in sessions.Values)if(s.Terminal){s.Visible=false;s.DismissedTurn=s.TurnId;}Save();}}
         public void Dismiss(string id){lock(gate){Session s;if(sessions.TryGetValue(id,out s)&&s.Status!="running"){s.Visible=false;s.DismissedTurn=s.TurnId;Save();}}}
         bool Eligible(string path){string rel=path.Substring(Math.Min(path.Length,Path.Combine(home,"projects").Length)).Replace('\\','/');return rel.IndexOf("/subagents/",StringComparison.OrdinalIgnoreCase)<0&&ClaudeSource.FileId(path)!=""&&allowed(ClaudeSource.FileId(path));}

@@ -182,6 +182,7 @@ namespace CodexFloat {
             foreach(var s in saved.Values) if(s.Visible) sessions[s.Id]=s.Copy();
         }
         public List<Session> Snapshot(){lock(gate)return sessions.Values.Where(s=>s.Visible&&!s.IsChild).Select(s=>s.Copy()).ToList();}
+        public List<Session> CompletedSnapshot(){lock(gate)return sessions.Values.Where(s=>s.Status=="completed"&&!s.IsChild&&(s.Visible||s.DismissedTurn!="")).Select(s=>s.Copy()).ToList();}
         public void ClearFinished(){lock(gate){foreach(var s in sessions.Values)if(s.Terminal){s.Visible=false;s.DismissedTurn=s.TurnId;}Save();}}
         public void Dismiss(string id){lock(gate){Session s;if(sessions.TryGetValue(id,out s)&&s.Status!="running"){s.Visible=false;s.DismissedTurn=s.TurnId;Save();}}}
         public void Poll() {

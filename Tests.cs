@@ -12,6 +12,27 @@ namespace CodexFloat {
         [DllImport("winsqlite3.dll",CallingConvention=CallingConvention.Cdecl)]static extern int sqlite3_close(IntPtr db);
         static void Db(string path,string sql){IntPtr db;int code=sqlite3_open_v2(Encoding.UTF8.GetBytes(path+"\0"),out db,6,IntPtr.Zero);try{if(code!=0)throw new Exception("fixture open "+code);code=sqlite3_exec(db,Encoding.UTF8.GetBytes(sql+"\0"),IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);if(code!=0)throw new Exception("fixture SQL "+code);}finally{sqlite3_close(db);}}
         static long Stamp(){return (long)(DateTime.UtcNow-new DateTime(1970,1,1,0,0,0,DateTimeKind.Utc)).TotalMilliseconds;}
+        static Session Finished(string id,string turn,DateTime at,string platform="codex"){return new Session{Id=id,TurnId=turn,Platform=platform,Title="Completed fixture",Cwd=@"C:\Projects\fixture",Status="completed",Visible=true,StartedAt=at.AddMinutes(-3),FinishedAt=at,FilePath="private-source-path"};}
+        static void HistoryChecks(){
+            string id="dddddddd-dddd-4ddd-8ddd-dddddddddddd",data=Path.Combine(root,"history-unit");DateTime at=DateTime.UtcNow;
+            var h=new CompletionHistory(data);var first=Finished(id,"round1",at);h.Record(new[]{first});Check(h.Snapshot().Count==1,"history saves a completed round");
+            first.Status="running";first.FinishedAt=DateTime.MinValue;first.StartedAt=at.AddMinutes(1);Check(h.Snapshot()[0].Status=="completed"&&h.Snapshot()[0].RuntimeText(at.AddHours(2))=="03:00","history survives mutation and keeps frozen duration");
+            var duplicate=Finished(id,"round1",at.AddMilliseconds(40));h.Record(new[]{duplicate});Check(h.Snapshot().Count==1,"history deduplicates repeated round completion");
+            h.Record(new[]{Finished(id,"round2",at.AddMinutes(5))});Check(h.Snapshot().Count==2&&h.Snapshot()[0].TurnId=="round2","history keeps distinct rounds newest first");
+            h.Record(new[]{Finished(id,"round2",at.AddMinutes(5),"workbuddy")});Check(h.Snapshot().Count==3,"history separates same ID across platforms");
+            var exported=h.Snapshot();exported[0].Title="Changed by caller";Check(h.Snapshot().All(s=>s.Title!="Changed by caller"),"history snapshots cannot mutate stored records");Check(h.Snapshot().All(s=>s.FilePath==""),"history does not store source log paths");
+            var failed=Finished(Guid.NewGuid().ToString(),"failed",at);failed.Status="failed";var child=Finished(Guid.NewGuid().ToString(),"child",at);child.IsChild=true;h.Record(new[]{failed,child});Check(h.Snapshot().Count==3,"history excludes failures and internal agents");
+            Check(new CompletionHistory(data).Snapshot().Count==3,"history persists across widget restart");
+            string sameTime=Path.Combine(root,"history-same-time");var simultaneous=new CompletionHistory(sameTime);simultaneous.Record(new[]{Finished(id,"a",at),Finished(id,"b",at)});Check(simultaneous.Snapshot().Count==2,"explicit separate rounds remain separate at identical timestamp");
+            string localId="local_eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";var desktop=new CompletionHistory(Path.Combine(root,"history-desktop"));desktop.Record(new[]{Finished(localId,"desktop-123",at,"claude"),Finished(localId,"actual-turn",at,"claude")});Check(desktop.Snapshot().Count==1,"desktop tail identity change does not duplicate same completion");
+            var capped=new CompletionHistory(Path.Combine(root,"history-capacity"));capped.Record(Enumerable.Range(0,215).Select(i=>Finished(id,"round-"+i,at.AddMinutes(i))));Check(capped.Snapshot().Count==200&&capped.Snapshot().First().TurnId=="round-214"&&capped.Snapshot().Last().TurnId=="round-15","history retains newest 200 records in order");
+            capped.Record(new[]{Finished(id,"expired",at.AddDays(-1))});Check(capped.Snapshot().Count==200&&capped.Snapshot().All(s=>s.TurnId!="expired"),"old cache imports cannot evict newer history");
+            string legacy=Path.Combine(root,"history-legacy");var removed=Finished(id,"cleared-before-upgrade",at);removed.Visible=false;removed.DismissedTurn=removed.TurnId;Json.Save(Path.Combine(legacy,"sessions.json"),new SavedState{Sessions=new List<Session>{removed}});Check(new CompletionHistory(legacy).Snapshot().Single().TurnId==removed.TurnId,"upgrade recovers already cleared records from widget cache");
+            string backup=Path.Combine(root,"history-backup");var saved=new CompletionHistory(backup);saved.Record(new[]{Finished(id,"one",at)});saved.Record(new[]{Finished(id,"two",at.AddMinutes(1))});File.WriteAllText(Path.Combine(backup,"completion-history.json"),"broken");Check(new CompletionHistory(backup).Snapshot().Single().TurnId=="one","history recovers last backup if current file is corrupt");
+            string source=Path.Combine(root,"history-hub-source"),hubData=Path.Combine(root,"history-hub-state");string file=MakeSession(Path.Combine(source,"sessions","2026","01","01"),id,false,"task_started");
+            using(var hub=new MonitoringHub(source,Path.Combine(root,"absent"),hubData,true,false)){hub.Poll();Append(file,Event("task_complete","t1")+"\n");hub.Poll();hub.ClearFinished();Check(hub.Snapshot().Count==0&&hub.RecentCompleted().Count==1,"clearing current list keeps recent completed history");hub.Configure(false,false);Check(hub.RecentCompleted().Count==1,"platform switch off does not erase past completions");}
+            using(var hub=new MonitoringHub(source,Path.Combine(root,"absent"),hubData,false,false)){Check(hub.RecentCompleted().Count==1,"cleared history is available on restart with all platforms off");hub.Configure(true,false);hub.Poll();Append(file,Event("task_started","t2")+"\n");hub.Poll();Check(hub.Snapshot().Single().Status=="running"&&hub.RecentCompleted().Single().TurnId=="t1","new running round does not overwrite earlier completion");Append(file,Event("task_complete","t2")+"\n");hub.Poll();Check(hub.RecentCompleted().Count==2,"next round adds another independent completion");}
+        }
         static string CcLine(string id,string type,string uuid,object message,bool side=false,string subtype="",bool meta=false,bool error=false){return Json.Serializer().Serialize(new{sessionId=id,type=type,uuid=uuid,cwd=@"C:\Projects\fixture",timestamp=DateTime.UtcNow.ToString("O"),isSidechain=side,isMeta=meta,isApiErrorMessage=error,subtype=subtype,message=message})+"\n";}
         static void ClaudeChecks(){
             string id="cccccccc-cccc-4ccc-8ccc-cccccccccccc";var s=new Session{Id=id,Platform="claude"};
@@ -178,7 +199,7 @@ namespace CodexFloat {
                 Append(repeatFile,Event("task_complete","t3")+"\n");engine.Poll();Check(repeatNotices==3,"third round alerts after restart");
             }
             var partial=Rollout.Identity(p3);Append(p3,"{\"type\":");long offset=Rollout.Hydrate(partial);Check(partial.Status=="completed"&&offset<new FileInfo(p3).Length,"hydration ignores partial trailing JSON");
-            WorkBuddyChecks();ClaudeChecks();ClaudeDesktopChecks();Console.WriteLine("ALL "+passed+" CHECKS PASSED\nFixtures: "+root);return 0;
+            WorkBuddyChecks();ClaudeChecks();ClaudeDesktopChecks();HistoryChecks();Console.WriteLine("ALL "+passed+" CHECKS PASSED\nFixtures: "+root);return 0;
         }catch(Exception ex){Console.Error.WriteLine(ex);return 1;}}
     }
 }

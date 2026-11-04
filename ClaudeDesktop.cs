@@ -95,6 +95,7 @@ namespace CodexFloat {
             transcripts.Poll();Health=records.Count==0?"等待 Claude 桌面端 Code 会话":"Claude 桌面端 Code 已连接";
         }catch{Health="Claude 桌面端 Code 读取暂不可用，正在重试";}}}
         public List<Session> Snapshot(){lock(gate)return Map(transcripts.Snapshot());}
+        public List<Session> CompletedSnapshot(){lock(gate)return Map(transcripts.CompletedSnapshot());}
         public long BytesRead {get{return transcripts.BytesRead;}}
         public void ClearFinished(){lock(gate)transcripts.ClearFinished();}
         public void Dismiss(string id){lock(gate){foreach(var record in records.Values.Where(r=>r.Id==id))transcripts.Dismiss(record.CliId);}}
