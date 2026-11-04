@@ -175,7 +175,7 @@ namespace CodexFloat {
         readonly Dictionary<string,Session> saved=new Dictionary<string,Session>();
         FileSystemWatcher watcher;DateTime lastScan,lastTitles,lastProjects;bool initialized,changed;
         Dictionary<string,string> projectNames=new Dictionary<string,string>(),projectAssignments=new Dictionary<string,string>(),rootNames=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
-        public string Health="正在连接本机会话…";
+        public string Health="正在连接本机会话…"; public bool Available {get;private set;}
         public event Action<List<Session>> Completed;
         public Engine(string codexHome,string dataDir) {
             home=codexHome;statePath=Path.Combine(dataDir,"sessions.json");
@@ -190,7 +190,7 @@ namespace CodexFloat {
             var notices=new List<Session>();
             lock(gate) {
                 try {
-                    string dir=Path.Combine(home,"sessions");if(!Directory.Exists(dir)){Health="等待 Codex 创建本机会话";return;}
+                    Available=false; string dir=Path.Combine(home,"sessions");if(!Directory.Exists(dir)){Health="等待 Codex 创建本机会话";return;}
                     if(watcher==null){watcher=new FileSystemWatcher(dir,"*.jsonl"){IncludeSubdirectories=true,NotifyFilter=NotifyFilters.LastWrite|NotifyFilters.Size|NotifyFilters.FileName,InternalBufferSize=32768};
                         watcher.Changed+=(o,e)=>dirty[e.FullPath]=1;watcher.Created+=(o,e)=>dirty[e.FullPath]=1;watcher.Renamed+=(o,e)=>dirty[e.FullPath]=1;watcher.Error+=(o,e)=>lastScan=DateTime.MinValue;watcher.EnableRaisingEvents=true;}
                     ReadTitles();ReadProjects();DateTime now=DateTime.UtcNow;
@@ -219,7 +219,7 @@ namespace CodexFloat {
                         string project=ProjectFor(s);if(s.Project!=project){s.Project=project;changed=true;}
                         if(s.Status=="running"&&(now-s.LastActivity).TotalMinutes>3&&!Rollout.HasWriter(s.FilePath)){s.Status="unknown";changed=true;}
                     }
-                    Health="自动监控已开启";initialized=true;
+                    Health="自动监控已开启";initialized=true;Available=true;
                     if(changed){Save();changed=false;}
                 }catch(Exception ex){Health="读取暂不可用，正在重试";Log(ex.GetType().Name+": "+ex.Message);}
             }

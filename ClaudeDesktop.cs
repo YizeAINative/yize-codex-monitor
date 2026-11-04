@@ -59,7 +59,7 @@ namespace CodexFloat {
     public class ClaudeEngine:IDisposable {
         readonly object gate=new object();readonly string root;readonly ClaudeTranscriptEngine transcripts;
         Dictionary<string,ClaudeDesktopRecord> records=new Dictionary<string,ClaudeDesktopRecord>(StringComparer.OrdinalIgnoreCase);
-        DateTime scanned;public string Health="等待 Claude 桌面端 Code";
+        DateTime scanned;public bool Available {get;private set;} public string Health="等待 Claude 桌面端 Code";
         public event Action<List<Session>> Completed;
         public ClaudeEngine(string home,string dataDir,Func<bool> runtimeCheck=null,string transcriptHome=null){
             root=home;
@@ -90,9 +90,9 @@ namespace CodexFloat {
                 session.Cwd=record.Cwd;result.Add(session);
             }return result;
         }
-        public void Poll(){lock(gate){try{
+        public void Poll(){lock(gate){Available=false;try{
             if((DateTime.UtcNow-scanned).TotalSeconds>=2)Scan();
-            transcripts.Poll();Health=records.Count==0?"等待 Claude 桌面端 Code 会话":"Claude 桌面端 Code 已连接";
+            transcripts.Poll();Available=transcripts.Available&&records.Count>0;Health=records.Count==0?"等待 Claude 桌面端 Code 会话":"Claude 桌面端 Code 已连接";
         }catch{Health="Claude 桌面端 Code 读取暂不可用，正在重试";}}}
         public List<Session> Snapshot(){lock(gate)return Map(transcripts.Snapshot());}
         public List<Session> CompletedSnapshot(){lock(gate)return Map(transcripts.CompletedSnapshot());}

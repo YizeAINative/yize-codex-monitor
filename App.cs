@@ -20,7 +20,7 @@ using Forms = System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("一泽的 AI Agent 任务监控")]
 [assembly: System.Reflection.AssemblyProduct("CodexFloat")]
-[assembly: System.Reflection.AssemblyVersion("1.5.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.6.0.0")]
 namespace CodexFloat {
     static class Program {
         public static string DataDir,Home,WorkBuddyHome,ClaudeHome,CapturePath="",EvidenceDir="";public static bool Demo,DebugTaskbar,PreviewSettings,RenderOnly,InitialRecent;
@@ -189,7 +189,7 @@ namespace CodexFloat {
             var test=new MenuItem{Header="测试完成提醒"};test.Click+=(o,e)=>OnCompleted(new List<Session>{new Session{Title="提醒已开启",Cwd="一泽的 AI Agent 任务监控",Status="completed"}});m.Items.Add(test);
             var reset=new MenuItem{Header="重置窗口位置"};reset.Click+=(o,e)=>{settings.Left=-99999;settings.Top=-99999;PositionWindow();SaveSettings();};m.Items.Add(reset);
             var startup=new MenuItem{Header="开机自动启动",IsCheckable=true,IsChecked=StartupEnabled()};startup.Click+=(o,e)=>SetStartup(startup.IsChecked);m.Items.Add(startup);
-            m.Items.Add(new Separator());var about=new MenuItem{Header="关于 / 使用说明"};about.Click+=(o,e)=>MessageBox.Show(this,"一泽的 AI Agent 任务监控 1.5.0\n\n支持 Codex / WorkBuddy / Claude 桌面端 Code，在菜单中勾选监控平台。\n新一轮开始会自动加入列表。\n绿色代表本轮结束，点击标题打开对应对话。\n中断不会标为完成；状态待确认时不会误报。\n完成记录在「最近完成」保留最近 200 条。\n清除当前列表不影响完成记录。\n拖动顶部移动；右下角调整宽度。\n\n仅在本机读取会话元数据，无网络请求。\n配置与监控记录："+Program.DataDir+"\n\n项目：github.com/YizeAINative/yize-codex-monitor\n参考：github.com/LH-03/agent-monitor-hud", "关于一泽的 AI Agent 任务监控");m.Items.Add(about);
+            m.Items.Add(new Separator());var about=new MenuItem{Header="关于 / 使用说明"};about.Click+=(o,e)=>MessageBox.Show(this,"一泽的 AI Agent 任务监控 1.6.0\n\n支持 Codex / WorkBuddy / Claude 桌面端 Code，在菜单中勾选监控平台。\n新一轮开始会自动加入列表。\n绿色代表本轮结束，点击标题打开对应对话。\n中断不会标为完成；状态待确认时不会误报。\n完成记录在「最近完成」保留最近 200 条。\n当前和完成列表自动保存在本地，启动后重新检测。\n右键已完成会话可「加入完成」并单独移出当前。\n拖动顶部移动；右下角调整宽度。\n\n仅在本机读取会话元数据，无网络请求。\n配置与监控记录："+Program.DataDir+"\n\n项目：github.com/YizeAINative/yize-codex-monitor\n参考：github.com/LH-03/agent-monitor-hud", "关于一泽的 AI Agent 任务监控");m.Items.Add(about);
             var exit=new MenuItem{Header="退出软件"};exit.Click+=(o,e)=>Exit();m.Items.Add(exit);return m;}
         void AddCheck(ContextMenu m,string name,bool check,Action action){var item=new MenuItem{Header=name,IsCheckable=true,IsChecked=check};item.Click+=(o,e)=>action();m.Items.Add(item);}
         bool StartupEnabled(){using(var key=Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))return key!=null&&key.GetValue("CodexFloat")!=null;}
@@ -209,7 +209,7 @@ namespace CodexFloat {
             string sig=(showingRecent?"recent:":"current:")+string.Join("|",displayed.Select(s=>s.Key+"/"+s.TurnId+"/"+s.Label+"/"+s.Group+"/"+s.Status+"/"+s.StartedAt.Ticks+"/"+s.FinishedAt.Ticks));
             currentTab.Content="当前任务  "+latest.Count;recentTab.Content="最近完成  "+recent.Count;currentTab.IsChecked=!showingRecent;recentTab.IsChecked=showingRecent;clear.Visibility=showingRecent?Visibility.Collapsed:Visibility.Visible;
             int running=latest.Count(s=>s.Status=="running"),done=latest.Count(s=>s.Status=="completed"),other=latest.Count-running-done;
-            summary.Text=showingRecent?(engine.HistoryError!=""?engine.HistoryError:"最近 "+recent.Count+" 个会话 · 清除当前列表后仍保留"):(latest.Count==0?(Program.Demo?"演示界面":engine.Health):running+" 个处理中"+(done>0?" · "+done+" 个完成":"")+(other>0?" · "+other+" 个待查看":""));summary.ToolTip=showingRecent?"每个会话只显示最新完成，折叠状态和完成记录重启后保留":"开始执行自动加入 · 绿色代表本轮结束";
+            summary.Text=showingRecent?(engine.HistoryError!=""?engine.HistoryError:"最近 "+recent.Count+" 个会话 · 清除当前列表后仍保留"):(engine.CurrentError!=""?engine.CurrentError:(!Program.Demo&&engine.Rechecking?"已恢复列表，正在检测状态…":latest.Count==0?(Program.Demo?"演示界面":engine.Health):running+" 个处理中"+(done>0?" · "+done+" 个完成":"")+(other>0?" · "+other+" 个待查看":"")));summary.ToolTip=showingRecent?"每个会话只显示最新完成，折叠状态和完成记录重启后保留":"当前列表已保存在本地，启动后自动检测状态";
             tray.Text="一泽的 AI Agent 任务监控 · "+running+" 处理中 · "+done+" 完成";
             if(sig!=signature||list.Children.Count==0){signature=sig;BuildList();if(Program.EvidenceDir!=""&&ready)Dispatcher.BeginInvoke(new Action(()=>Capture(Path.Combine(Program.EvidenceDir,"window.png"))),DispatcherPriority.ContextIdle);}
             if(!showingRecent)foreach(var session in latest){TextBlock label;if(runtimeLabels.TryGetValue(session.Key,out label))label.Text=session.RuntimeText(DateTime.UtcNow);}
@@ -265,7 +265,11 @@ namespace CodexFloat {
             if(session.Status!="running"){var t=Theme.Text(session.Status=="completed"?"完成":session.Status=="interrupted"?"已中断":session.Status=="failed"?"失败":session.Status=="waiting"?"等待输入":"待确认",11,session.Status=="completed"?Theme.Green:Theme.B("#A58B5A"));t.Margin=new Thickness(5,0,0,0);state.Children.Add(t);}
             button.MouseEnter+=(o,e)=>border.Background=rowHover;button.MouseLeave+=(o,e)=>border.Background=rowRest;
             button.Click+=(o,e)=>OpenSession(session);
-            if(!historical&&session.Status!="running"){var cm=Theme.Menu();var remove=new MenuItem{Header="从列表移除（保留完成记录）"};remove.Click+=(o,e)=>{engine.Dismiss(session);Refresh();};cm.Items.Add(remove);button.ContextMenu=cm;}
+            if(!historical){
+                var cm=Theme.Menu();var archive=new MenuItem{Header="加入完成",IsEnabled=session.Status=="completed",ToolTip=session.Status=="completed"?"保存到最近完成，并单独移出当前列表":"本轮完成后可加入完成"};
+                archive.Click+=(o,e)=>{engine.ArchiveCompleted(session);Refresh();};cm.Items.Add(archive);
+                if(session.Status!="running"&&session.Status!="waiting"&&session.Status!="completed"){var remove=new MenuItem{Header="从当前列表移除"};remove.Click+=(o,e)=>{engine.Dismiss(session);Refresh();};cm.Items.Add(remove);}button.ContextMenu=cm;
+            }
             return button;
         }
         static string StateText(string state){return state=="running"?"处理中":state=="completed"?"本轮已完成":state=="interrupted"?"已中断":state=="failed"?"执行失败":state=="waiting"?"等待输入":"状态待确认";}

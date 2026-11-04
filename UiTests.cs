@@ -32,6 +32,17 @@ class UiTests {
         window.RenderPreview(Path.Combine(root,"collapsed.png"));Check(Find(window,"整理项目资料，")==null,"rerender keeps folder collapsed");
         Click(Find(window,"research，"));Check(Find(window,"整理项目资料，")!=null&&Find(window,"整理历史资料，")!=null,"clicking collapsed header expands its rows");
         Click(Find(window,"research，"));var second=new MainWindow{Left=100,Top=100};second.RenderPreview(Path.Combine(root,"restarted.png"));Check(Find(second,"整理项目资料，")==null&&AutomationProperties.GetName(Find(second,"research，")).Contains("已折叠"),"new window restores persisted collapsed folder");
+        set("InitialRecent",false);var currentDemo=new MainWindow{Left=100,Top=100};currentDemo.RenderPreview(Path.Combine(root,"current.png"));
+        var runningMenu=Find(currentDemo,"整理项目资料，").ContextMenu.Items.OfType<MenuItem>().Single(m=>Convert.ToString(m.Header)=="加入完成");Check(!runningMenu.IsEnabled,"running task cannot be manually marked complete");
+        string manual=Path.Combine(root,"manual-archive");Directory.CreateDirectory(manual);set("DataDir",manual);set("Demo",false);
+        var a=new Session{Id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",TurnId="a1",Platform="codex",Title="Done A",Cwd=root,Visible=true,Status="completed",StartedAt=DateTime.UtcNow.AddMinutes(-2),FinishedAt=DateTime.UtcNow.AddMinutes(-1)};
+        var b=a.Copy();b.Id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";b.TurnId="b1";b.Title="Done B";
+        Json.Save(Path.Combine(manual,"current-tasks.json"),new CurrentTasksDocument{SavedAt=DateTime.UtcNow,Sessions=new List<Session>{a,b}});
+        var manualWindow=new MainWindow{Left=100,Top=100};var refresh=typeof(MainWindow).GetMethod("Refresh",BindingFlags.Instance|BindingFlags.NonPublic);refresh.Invoke(manualWindow,null);Layout(manualWindow);
+        var archive=Find(manualWindow,"Done A，").ContextMenu.Items.OfType<MenuItem>().Single(m=>Convert.ToString(m.Header)=="加入完成");Check(archive.IsEnabled,"completed conversation exposes join-completed action");archive.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        Check(Find(manualWindow,"Done A，")==null&&Find(manualWindow,"Done B，")!=null,"right-click action removes only selected completed conversation");
+        var hub=(MonitoringHub)typeof(MainWindow).GetField("engine",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(manualWindow);Check(hub.RecentCompleted().Single().Id==a.Id,"right-click action saves selected conversation in recent completed");
+        var reopened=new MainWindow{Left=100,Top=100};refresh.Invoke(reopened,null);Check(Find(reopened,"Done A，")==null&&Find(reopened,"Done B，")!=null,"single-row removal survives new window restore");
         Console.WriteLine("ALL "+passed+" UI CHECKS PASSED\nEvidence: "+root);return 0;
     }catch(Exception ex){Console.Error.WriteLine(ex);return 1;}}
 }

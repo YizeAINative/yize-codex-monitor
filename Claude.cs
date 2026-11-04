@@ -66,7 +66,7 @@ namespace CodexFloat {
         readonly Dictionary<string,Session> sessions=new Dictionary<string,Session>();
         readonly ConcurrentDictionary<string,byte> dirty=new ConcurrentDictionary<string,byte>(StringComparer.OrdinalIgnoreCase);
         FileSystemWatcher watcher;DateTime lastScan,lastRuntime;bool live=true,initialized,changed;
-        public string Health="等待 Claude Code";public event Action<List<Session>> Completed;
+        public bool Available {get;private set;} public string Health="等待 Claude Code";public event Action<List<Session>> Completed;
         public ClaudeTranscriptEngine(string root,string dataDir,Func<bool> runtimeCheck=null,Func<string,bool> sessionAllowed=null,Action<Session> seedSession=null){seed=seedSession;allowed=sessionAllowed??(id=>true);home=root;statePath=Path.Combine(dataDir,"claude-sessions.json");runtime=runtimeCheck??ClaudeSource.RuntimeRunning;
             try{var state=Json.Serializer().Deserialize<SavedState>(Json.SharedText(statePath));foreach(var s in state.Sessions){s.Platform="claude";sessions[s.Id]=s;}}catch{}
         }
@@ -76,7 +76,7 @@ namespace CodexFloat {
         public void Dismiss(string id){lock(gate){Session s;if(sessions.TryGetValue(id,out s)&&s.Status!="running"){s.Visible=false;s.DismissedTurn=s.TurnId;Save();}}}
         bool Eligible(string path){string rel=path.Substring(Math.Min(path.Length,Path.Combine(home,"projects").Length)).Replace('\\','/');return rel.IndexOf("/subagents/",StringComparison.OrdinalIgnoreCase)<0&&ClaudeSource.FileId(path)!=""&&allowed(ClaudeSource.FileId(path));}
         public void Poll(){var notices=new List<Session>();lock(gate){try{
-            string dir=Path.Combine(home,"projects");if(!Directory.Exists(dir)){Health="等待 Claude Code 创建本地会话";return;}
+            Available=false;string dir=Path.Combine(home,"projects");if(!Directory.Exists(dir)){Health="等待 Claude Code 创建本地会话";return;}
             DateTime now=DateTime.UtcNow;
             if(watcher==null){watcher=new FileSystemWatcher(dir,"*.jsonl"){IncludeSubdirectories=true,NotifyFilter=NotifyFilters.LastWrite|NotifyFilters.FileName|NotifyFilters.Size,InternalBufferSize=32768};watcher.Changed+=(o,e)=>dirty[e.FullPath]=1;watcher.Created+=(o,e)=>dirty[e.FullPath]=1;watcher.Renamed+=(o,e)=>dirty[e.FullPath]=1;watcher.Error+=(o,e)=>lastScan=DateTime.MinValue;watcher.EnableRaisingEvents=true;}
             if((now-lastRuntime).TotalSeconds>=10){live=runtime();lastRuntime=now;}
@@ -90,7 +90,7 @@ namespace CodexFloat {
                 if(!tracks.TryGetValue(path,out t))Discover(path,notices);else Read(t,notices,false);
             }
             foreach(var s in sessions.Values)if((s.Status=="running"||s.Status=="waiting")&&!live&&(now-s.LastActivity).TotalMinutes>3){s.Status="unknown";changed=true;}
-            initialized=true;Health="Claude Code 已连接";if(changed){Save();changed=false;}
+            initialized=true;Health="Claude Code 已连接";Available=true;if(changed){Save();changed=false;}
         }catch(Exception ex){Health="Claude Code 读取暂不可用，正在重试";try{Directory.CreateDirectory(Path.GetDirectoryName(statePath));File.WriteAllText(Path.Combine(Path.GetDirectoryName(statePath),"claude-read-error.log"),ex.GetType().Name+": "+ex.Message);}catch{}}}
             if(notices.Count>0&&Completed!=null)Completed(notices);
         }
