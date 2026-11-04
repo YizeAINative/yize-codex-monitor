@@ -1,4 +1,4 @@
-一泽的 AI Agent 任务监控 1.1.0
+一泽的 AI Agent 任务监控 1.1.1
 
 双击 CodexFloat.exe 即可运行。
 
