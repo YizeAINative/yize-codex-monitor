@@ -48,6 +48,12 @@ namespace CodexFloat {
         }
         public void Record(IEnumerable<Session> items){lock(gate){foreach(var item in items)if(Add(item))dirty=true;Flush();}}
         public List<Session> Snapshot(){lock(gate)return entries.Select(e=>e.Copy()).ToList();}
+        public static List<Session> LatestPerSession(IEnumerable<Session> source){
+            return source.GroupBy(s=>s.Key,StringComparer.OrdinalIgnoreCase)
+                .Select(g=>g.OrderByDescending(s=>s.FinishedAt).ThenByDescending(s=>s.StartedAt).First().Copy())
+                .OrderByDescending(s=>s.FinishedAt).ToList();
+        }
+        public List<Session> LatestSnapshot(){lock(gate)return LatestPerSession(entries);}
         public void Flush(){lock(gate){
             if(!dirty||DateTime.UtcNow<retryAt)return;
             try{

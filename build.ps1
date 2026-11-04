@@ -15,4 +15,8 @@ if (Test-Path -LiteralPath (Join-Path $projectRoot 'Tests.cs')) {
   & $compiler /nologo /target:exe /utf8output /codepage:65001 ('/out:' + (Join-Path $outDir 'CoreTests.exe')) @refs (Join-Path $projectRoot 'Core.cs') (Join-Path $projectRoot 'History.cs') (Join-Path $projectRoot 'WorkBuddy.cs') (Join-Path $projectRoot 'Claude.cs') (Join-Path $projectRoot 'ClaudeDesktop.cs') (Join-Path $projectRoot 'Tests.cs')
   if ($LASTEXITCODE -ne 0) { throw 'Test build failed' }
 }
+if (Test-Path -LiteralPath (Join-Path $projectRoot 'UiTests.cs')) {
+  & $compiler /nologo /target:exe /utf8output /codepage:65001 ('/out:' + (Join-Path $outDir 'UiTests.exe')) ('/reference:' + (Join-Path $outDir 'CodexFloat.exe')) @refs (Join-Path $projectRoot 'UiTests.cs')
+  if ($LASTEXITCODE -ne 0) { throw 'UI test build failed' }
+}
 Get-Item -LiteralPath (Join-Path $outDir 'CodexFloat.exe') | Select-Object FullName,Length,LastWriteTime

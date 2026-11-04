@@ -139,7 +139,7 @@ namespace CodexFloat {
         }}
         void Forward(List<Session> items){history.Record(items);if(Completed!=null)Completed(items);}
         void RememberCompletions(){if(codex!=null)history.Record(codex.CompletedSnapshot());if(workbuddy!=null)history.Record(workbuddy.CompletedSnapshot());if(claude!=null)history.Record(claude.CompletedSnapshot());}
-        public List<Session> RecentCompleted(){return history.Snapshot();}
+        public List<Session> RecentCompleted(){return history.LatestSnapshot();}
         public string HistoryError {get{return history.Error;}}
         public List<Session> Snapshot(){lock(gate){var list=new List<Session>();if(enableCodex&&codex!=null)list.AddRange(codex.Snapshot());if(enableWorkBuddy&&workbuddy!=null)list.AddRange(workbuddy.Snapshot());if(enableClaude&&claude!=null)list.AddRange(claude.Snapshot());return list;}}
         public void ClearFinished(){lock(gate){RememberCompletions();if(enableCodex&&codex!=null)codex.ClearFinished();if(enableWorkBuddy&&workbuddy!=null)workbuddy.ClearFinished();if(enableClaude&&claude!=null)claude.ClearFinished();}}
