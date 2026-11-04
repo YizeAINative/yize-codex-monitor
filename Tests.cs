@@ -28,16 +28,82 @@ namespace CodexFloat {
             ClaudeSource.Apply(CcLine(id,"user","cancel",new{role="user",content="[Request interrupted by user]"},false,"",true),s);ClaudeSource.Apply(CcLine(id,"system","duration",null,false,"turn_duration"),s);Check(s.Status=="interrupted","Claude interrupt and duration never turn green");
             ClaudeSource.Apply(user("turn3"),s);ClaudeSource.Apply(CcLine(id,"assistant","err",new{role="assistant",stop_reason=(string)null},false,"",false,true),s);Check(s.Status=="failed","Claude API error is failure");
             ClaudeSource.Apply(Json.Serializer().Serialize(new{type="custom-title",sessionId=id,customTitle="My named session"}),s);ClaudeSource.Apply(Json.Serializer().Serialize(new{type="summary",sessionId=id,summary="Auto summary"}),s);Check(s.Title=="My named session","Claude custom name overrides automatic summary");
-            Check(ClaudeSource.ResumeArguments(id)=="--resume "+id,"Claude resumes exact session without submitting prompt");bool invalid=false;try{ClaudeSource.ResumeArguments("foo; echo bad");}catch(ArgumentException){invalid=true;}Check(invalid,"Claude resume rejects non-GUID input");
+
             string home=Path.Combine(root,"claude"),dir=Path.Combine(home,"projects","C--fixture"),state=Path.Combine(root,"claude-state");Directory.CreateDirectory(dir);string file=Path.Combine(dir,id+".jsonl");File.WriteAllText(file,user("old")+end(),new UTF8Encoding(false));
-            int alerts=0;using(var e=new ClaudeEngine(home,state,()=>true)){e.Completed+=items=>alerts+=items.Count;e.Poll();Check(e.Snapshot().Count==0&&alerts==0,"Claude history does not flood initial list");
+            int alerts=0;using(var e=new ClaudeTranscriptEngine(home,state,()=>true)){e.Completed+=items=>alerts+=items.Count;e.Poll();Check(e.Snapshot().Count==0&&alerts==0,"Claude history does not flood initial list");
                 Append(file,user("round-1"));e.Poll();Check(e.Snapshot().Single().Status=="running","Claude resumed file automatically joins");Append(file,end());e.Poll();Check(e.Snapshot().Single().Status=="completed"&&alerts==1,"Claude completion emits one alert");
                 Append(file,end());e.Poll();Check(alerts==1,"Claude repeated terminal message is deduplicated");Append(file,user("round-2"));e.Poll();Check(e.Snapshot().Single().Status=="running","Claude completed row resumes spinner");Append(file,end());e.Poll();Check(alerts==2,"Claude next round alerts again");e.ClearFinished();Check(e.Snapshot().Count==0&&File.Exists(file),"Claude clear does not delete transcript");
                 string childDir=Path.Combine(dir,id,"subagents");Directory.CreateDirectory(childDir);File.WriteAllText(Path.Combine(childDir,"dddddddd-dddd-4ddd-8ddd-dddddddddddd.jsonl"),user("child"));Thread.Sleep(100);e.Poll();Check(e.Snapshot().Count==0,"Claude nested subagent file is excluded");}
-            using(var e=new ClaudeEngine(home,state,()=>true)){e.Completed+=items=>alerts+=items.Count;e.Poll();Check(e.Snapshot().Count==0&&alerts==2,"Claude dismissal and alert keys survive restart");Append(file,user("round-3"));e.Poll();Append(file,end());e.Poll();Check(alerts==3,"Claude resumed after restart alerts normally");}
-            string emptyCodex=Path.Combine(root,"empty-codex"),emptyWb=Path.Combine(root,"empty-wb");
-            using(var hub=new MonitoringHub(emptyCodex,emptyWb,Path.Combine(root,"claude-hub"),false,false,home,true)){int notifications=0;hub.Completed+=items=>notifications+=items.Count;hub.Poll();Append(file,user("hub-round"));hub.Poll();Check(hub.Snapshot().Count==1&&hub.Snapshot()[0].Platform=="claude","Claude can be the only selected platform");hub.Configure(false,false,false);Append(file,end());hub.Poll();Check(hub.Snapshot().Count==0&&notifications==0,"unchecked Claude stops showing and notifying");hub.Configure(false,false,true);hub.Poll();Append(file,CcLine(id,"system","duration-2",null,false,"turn_duration"));hub.Poll();Check(notifications==0,"Claude re-enable does not replay paused completion");}
+            using(var e=new ClaudeTranscriptEngine(home,state,()=>true)){e.Completed+=items=>alerts+=items.Count;e.Poll();Check(e.Snapshot().Count==0&&alerts==2,"Claude dismissal and alert keys survive restart");Append(file,user("round-3"));e.Poll();Append(file,end());e.Poll();Check(alerts==3,"Claude resumed after restart alerts normally");}
             Check(Json.Serializer().Deserialize<Settings>("{\"MonitorCodex\":true}").MonitorClaude,"existing settings enable new Claude option");
+        }
+        static void ClaudeDesktopChecks(){
+            string desktop=Path.Combine(root,"desktop"),home=Path.Combine(root,"desktop-transcripts"),state=Path.Combine(root,"desktop-state");
+            string cli="11111111-1111-4111-8111-111111111111",id="local_22222222-2222-4222-8222-222222222222",standalone="33333333-3333-4333-8333-333333333333";
+            string metadata=Path.Combine(desktop,"claude-code-sessions","account","org",id+".json"),dir=Path.Combine(home,"projects","fixture");Directory.CreateDirectory(dir);
+            Json.Save(metadata,new{sessionId=id,cliSessionId=cli,title="Desktop title",cwd=@"C:\Projects\desktop",isArchived=false});
+            string file=Path.Combine(dir,cli+".jsonl"),other=Path.Combine(dir,standalone+".jsonl");
+            Func<string,string> user=turn=>CcLine(cli,"user",turn,new{role="user",content="fixture"});
+            Func<string> end=()=>CcLine(cli,"assistant","final",new{role="assistant",stop_reason="end_turn"});
+            File.WriteAllText(file,user("old")+end());File.WriteAllText(other,CcLine(standalone,"user","cli-only",new{role="user",content="fixture"}));
+            Check(ClaudeDesktopSource.DeepLink(new Session{Id=id})=="claude://claude.ai/epitaxy/"+id,"desktop link opens exact Code page");
+            bool invalid=false;try{ClaudeDesktopSource.DeepLink(new Session{Id="local_x/../../new?q=bad"});}catch(ArgumentException){invalid=true;}Check(invalid,"desktop link rejects malformed identifiers");
+            int notices=0;using(var engine=new ClaudeEngine(desktop,state,()=>true,home)){
+                engine.Completed+=items=>{notices+=items.Count;Check(items.All(s=>s.Id==id),"notification uses desktop identity");};
+                engine.Poll();Check(engine.Snapshot().Count==0&&notices==0,"desktop skips history and standalone command-line task");
+                Append(file,user("round1"));engine.Poll();var session=engine.Snapshot().Single();
+                Check(session.Id==id&&session.Title=="Desktop title"&&session.Cwd==@"C:\Projects\desktop"&&session.Status=="running","desktop metadata maps active transcript to desktop task");
+                Append(file,end());engine.Poll();Check(notices==1&&engine.Snapshot().Single().Status=="completed","desktop completion notifies once");engine.Poll();Check(notices==1,"desktop repeat poll does not repeat notification");
+                engine.Dismiss(id);Check(engine.Snapshot().Count==0&&File.Exists(file)&&File.Exists(metadata),"desktop dismiss maps ID without deleting source");
+                Append(file,user("round2"));engine.Poll();Check(engine.Snapshot().Single().Status=="running","desktop next round reappears");
+                Append(file,CcLine(cli,"user","interrupt",new{role="user",content="[Request interrupted by user]"}));engine.Poll();Check(engine.Snapshot().Single().Status=="interrupted"&&notices==1,"desktop interruption is not a success notification");engine.ClearFinished();
+            }
+            using(var engine=new ClaudeEngine(desktop,state,()=>true,home)){engine.Poll();Check(engine.Snapshot().Count==0,"desktop dismissal survives restart");}
+            string oldHome=Environment.GetEnvironmentVariable("CLAUDE_CONFIG_DIR");try{
+                Environment.SetEnvironmentVariable("CLAUDE_CONFIG_DIR",home);
+                using(var hub=new MonitoringHub(Path.Combine(root,"none"),Path.Combine(root,"none"),Path.Combine(root,"desktop-hub"),false,false,desktop,true)){
+                    int alerts=0;hub.Completed+=items=>alerts+=items.Count;hub.Poll();Append(file,user("hub"));hub.Poll();Check(hub.Snapshot().Single().Id==id,"hub monitors desktop Code independently");
+                    hub.Configure(false,false,false);Append(file,end());hub.Poll();Check(hub.Snapshot().Count==0&&alerts==0,"unchecked desktop stops showing and notifying");
+                    hub.Configure(false,false,true);hub.Poll();hub.Poll();Check(alerts==0,"desktop re-enable does not replay paused completions");
+                }
+            }finally{Environment.SetEnvironmentVariable("CLAUDE_CONFIG_DIR",oldHome);}
+            Json.Save(metadata,new{sessionId=id,cliSessionId=cli,isArchived=true});Check(ClaudeDesktopSource.Read(metadata)==null,"archived desktop records excluded");
+            // Reproduce the actual local 17–40 MB history files: an old user
+            // event in chunk one must stay hidden until the final event is read.
+            Json.Save(metadata,new{sessionId=id,cliSessionId=cli,title="Large history"});
+            using(var writer=new StreamWriter(file,false,new UTF8Encoding(false))){writer.Write(user("large-history"));string padding=Json.Serializer().Serialize(new{type="ignored",data=new string('x',1024*1024)});for(int i=0;i<17;i++)writer.WriteLine(padding);writer.Write(end());}
+            using(var engine=new ClaudeEngine(desktop,Path.Combine(root,"large-desktop-state"),()=>true,home)){
+                int alerts=0;engine.Completed+=items=>alerts+=items.Count;engine.Poll();Check(engine.BytesRead<=256*1024,"startup reads at most 256 KiB instead of full history");Check(engine.Snapshot().Count==0,"large desktop history stays hidden on startup");engine.Poll();Check(engine.Snapshot().Count==0&&alerts==0,"large historic completion does not notify on repeat poll");
+            }
+            // The tail can begin exactly on a newline: do not discard a valid
+            // first record. Rewrites must seek to the new tail, not byte zero.
+            WriteExactTail(file,1024*1024,user("tail-boundary"));
+            using(var engine=new ClaudeEngine(desktop,Path.Combine(root,"boundary-state"),()=>true,home)){
+                int alerts=0;engine.Completed+=items=>alerts+=items.Count;engine.Poll();Check(engine.Snapshot().Single().TurnId=="tail-boundary","exact tail boundary keeps the first complete user record");
+                long read=engine.BytesRead;Append(file,end());engine.Poll();Check(alerts==1&&engine.BytesRead-read<8192,"tail tracker reads only new completion bytes");
+                WriteExactTail(file,512*1024,user("rewritten-tail"));engine.Poll();Check(engine.Snapshot().Single().Status=="running"&&engine.Snapshot().Single().TurnId=="rewritten-tail","truncated transcript seeks to new tail and resets state");
+                Check(engine.BytesRead-read<270000,"truncation recovery has bounded IO");
+            }
+            long userAt=Stamp()-30000;Json.Save(metadata,new{sessionId=id,cliSessionId=cli,title="Long tool run",latestUserFrameAt=userAt});
+            WriteExactTail(file,1024*1024,CcLine(cli,"progress","tool-progress",null));
+            using(var engine=new ClaudeEngine(desktop,Path.Combine(root,"progress-only-state"),()=>true,home)){
+                int alerts=0;engine.Completed+=items=>alerts+=items.Count;engine.Poll();var s=engine.Snapshot().Single();Check(s.Status=="running"&&s.TimerEstimated,"desktop prompt metadata seeds progress-only tail with estimated timer");
+                Append(file,end());engine.Poll();Check(alerts==1&&engine.Snapshot().Single().Status=="completed","progress-only tail transitions to completed once");
+            }
+            long freshAt=Stamp();Json.Save(metadata,new{sessionId=id,cliSessionId=cli,title="New prompt",latestUserFrameAt=freshAt});
+            string staleEnd=Json.Serializer().Serialize(new{sessionId=cli,type="assistant",timestamp=DateTime.UtcNow.AddSeconds(-10).ToString("O"),message=new{stop_reason="end_turn"}})+"\n";
+            WriteExactTail(file,1024*1024,staleEnd);
+            using(var engine=new ClaudeEngine(desktop,Path.Combine(root,"stale-terminal-state"),()=>true,home)){int alerts=0;engine.Completed+=items=>alerts+=items.Count;engine.Poll();Check(engine.Snapshot().Single().Status=="unknown"&&alerts==0,"older terminal event cannot finish a newer desktop prompt");}
+            File.WriteAllText(file,"{\"type\":\"ignored\",\"data\":\""+new string('x',600000),new UTF8Encoding(false));
+            using(var engine=new ClaudeEngine(desktop,Path.Combine(root,"partial-tail-state"),()=>true,home)){
+                int alerts=0;engine.Completed+=items=>alerts+=items.Count;engine.Poll();Check(engine.Snapshot().Single().Status=="unknown","partial final line does not invent completion");
+                Append(file,"\"}\n"+end());engine.Poll();Check(alerts==1&&engine.Snapshot().Single().Status=="completed","partial tail is skipped cleanly before appended complete event");
+            }
+        }
+        static void WriteExactTail(string file,int prefixBytes,string record){
+            const string start="{\"type\":\"ignored\",\"data\":\"",finish="\"}\n";
+            int padding=256*1024-Encoding.UTF8.GetByteCount(record+start+finish);
+            using(var writer=new StreamWriter(file,false,new UTF8Encoding(false))){writer.Write(new string('p',prefixBytes-1));writer.Write('\n');writer.Write(record);writer.Write(start);writer.Write(new string('x',padding));writer.Write(finish);}
         }
         static void WorkBuddyChecks(){
             string wb=Path.Combine(root,"workbuddy"),db=Path.Combine(wb,"workbuddy.db"),state=Path.Combine(root,"workbuddy-state"),id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";Directory.CreateDirectory(wb);long stamp=Stamp();
@@ -112,7 +178,7 @@ namespace CodexFloat {
                 Append(repeatFile,Event("task_complete","t3")+"\n");engine.Poll();Check(repeatNotices==3,"third round alerts after restart");
             }
             var partial=Rollout.Identity(p3);Append(p3,"{\"type\":");long offset=Rollout.Hydrate(partial);Check(partial.Status=="completed"&&offset<new FileInfo(p3).Length,"hydration ignores partial trailing JSON");
-            WorkBuddyChecks();ClaudeChecks();Console.WriteLine("ALL "+passed+" CHECKS PASSED\nFixtures: "+root);return 0;
+            WorkBuddyChecks();ClaudeChecks();ClaudeDesktopChecks();Console.WriteLine("ALL "+passed+" CHECKS PASSED\nFixtures: "+root);return 0;
         }catch(Exception ex){Console.Error.WriteLine(ex);return 1;}}
     }
 }

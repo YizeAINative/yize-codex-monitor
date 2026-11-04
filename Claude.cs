@@ -11,21 +11,6 @@ namespace CodexFloat {
     public static class ClaudeSource {
         public static string DefaultHome(){return Environment.GetEnvironmentVariable("CLAUDE_CONFIG_DIR")??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".claude");}
         public static string FileId(string path){Guid g;string stem=Path.GetFileNameWithoutExtension(path);return Guid.TryParseExact(stem,"D",out g)?g.ToString("D"):"";}
-        public static string ResumeArguments(string id){Guid g;if(!Guid.TryParseExact(id,"D",out g))throw new ArgumentException("Invalid Claude Code session id");return "--resume "+g.ToString("D");}
-        public static ProcessStartInfo ResumeStartInfo(Session session){
-            string args=ResumeArguments(session.Id);
-            if(!Directory.Exists(session.Cwd))throw new IOException("此对话的工作目录已不存在");
-            string user=Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var candidates=new List<string>{Path.Combine(user,@".local\bin\claude.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),@"npm\claude.cmd")};
-            foreach(string dir in (Environment.GetEnvironmentVariable("PATH")??"").Split(Path.PathSeparator)){
-                try{candidates.Add(Path.Combine(dir.Trim('"'),"claude.exe"));candidates.Add(Path.Combine(dir.Trim('"'),"claude.cmd"));}catch{}
-            }
-            string cli=candidates.FirstOrDefault(File.Exists);if(cli==null)throw new IOException("未找到 Claude Code CLI，请先安装 claude 命令");
-            if(cli.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))return new ProcessStartInfo(cli,args){UseShellExecute=true,WorkingDirectory=session.Cwd,WindowStyle=ProcessWindowStyle.Normal};
-            string command="& '"+cli.Replace("'","''")+"' "+args;
-            string shell=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),@"WindowsPowerShell\v1.0\powershell.exe");
-            return new ProcessStartInfo(shell,"-NoProfile -NoExit -EncodedCommand "+Convert.ToBase64String(Encoding.Unicode.GetBytes(command))){UseShellExecute=true,WorkingDirectory=session.Cwd,WindowStyle=ProcessWindowStyle.Normal};
-        }
         public static bool RuntimeRunning(){
             var native=Process.GetProcessesByName("claude");if(native.Length>0){foreach(var p in native)p.Dispose();return true;}
             try{using(var query=new ManagementObjectSearcher("SELECT CommandLine FROM Win32_Process WHERE Name='node.exe'"))using(var found=query.Get())foreach(ManagementObject process in found){using(process){string cmd=Convert.ToString(process["CommandLine"]);if(cmd.IndexOf("claude-code",StringComparison.OrdinalIgnoreCase)>=0)return true;}}return false;}
@@ -69,25 +54,26 @@ namespace CodexFloat {
                 // Duration is also emitted after interruption; it is not proof of success.
                 if(s.Status=="completed")s.FinishedAt=at;s.LastActivity=at;return true;
             }
-            if(type=="progress"){s.LastActivity=at;return true;}
+            if(type=="progress"){s.LastActivity=at;if(s.HasLifecycle&&s.FinishedAt==DateTime.MinValue&&s.Status=="unknown")s.Status="running";return true;}
             return false;
         }
     }
-    public class ClaudeEngine:IDisposable {
-        class Track{public Session S;public IncrementalReader Reader=new IncrementalReader();public long Length;public DateTime WriteAt;}
-        readonly object gate=new object();readonly string home,statePath;readonly Func<bool> runtime;
+    public class ClaudeTranscriptEngine:IDisposable {
+        class Track{public bool Hydrating,Initial,SkipFirst;public Session Previous;public Session S;public IncrementalReader Reader=new IncrementalReader();public long Length;public DateTime WriteAt;}
+        readonly object gate=new object();readonly string home,statePath;readonly Func<bool> runtime;readonly Func<string,bool> allowed;readonly Action<Session> seed;
+        public long BytesRead {get;private set;}
         readonly Dictionary<string,Track> tracks=new Dictionary<string,Track>(StringComparer.OrdinalIgnoreCase);
         readonly Dictionary<string,Session> sessions=new Dictionary<string,Session>();
         readonly ConcurrentDictionary<string,byte> dirty=new ConcurrentDictionary<string,byte>(StringComparer.OrdinalIgnoreCase);
         FileSystemWatcher watcher;DateTime lastScan,lastRuntime;bool live=true,initialized,changed;
         public string Health="等待 Claude Code";public event Action<List<Session>> Completed;
-        public ClaudeEngine(string root,string dataDir,Func<bool> runtimeCheck=null){home=root;statePath=Path.Combine(dataDir,"claude-sessions.json");runtime=runtimeCheck??ClaudeSource.RuntimeRunning;
+        public ClaudeTranscriptEngine(string root,string dataDir,Func<bool> runtimeCheck=null,Func<string,bool> sessionAllowed=null,Action<Session> seedSession=null){seed=seedSession;allowed=sessionAllowed??(id=>true);home=root;statePath=Path.Combine(dataDir,"claude-sessions.json");runtime=runtimeCheck??ClaudeSource.RuntimeRunning;
             try{var state=Json.Serializer().Deserialize<SavedState>(Json.SharedText(statePath));foreach(var s in state.Sessions){s.Platform="claude";sessions[s.Id]=s;}}catch{}
         }
-        public List<Session> Snapshot(){lock(gate)return sessions.Values.Where(s=>s.Visible).Select(s=>s.Copy()).ToList();}
+        public List<Session> Snapshot(){lock(gate)return sessions.Values.Where(s=>s.Visible&&allowed(s.Id)).Select(s=>s.Copy()).ToList();}
         public void ClearFinished(){lock(gate){foreach(var s in sessions.Values)if(s.Terminal){s.Visible=false;s.DismissedTurn=s.TurnId;}Save();}}
         public void Dismiss(string id){lock(gate){Session s;if(sessions.TryGetValue(id,out s)&&s.Status!="running"){s.Visible=false;s.DismissedTurn=s.TurnId;Save();}}}
-        bool Eligible(string path){string rel=path.Substring(Math.Min(path.Length,Path.Combine(home,"projects").Length)).Replace('\\','/');return rel.IndexOf("/subagents/",StringComparison.OrdinalIgnoreCase)<0&&ClaudeSource.FileId(path)!="";}
+        bool Eligible(string path){string rel=path.Substring(Math.Min(path.Length,Path.Combine(home,"projects").Length)).Replace('\\','/');return rel.IndexOf("/subagents/",StringComparison.OrdinalIgnoreCase)<0&&ClaudeSource.FileId(path)!=""&&allowed(ClaudeSource.FileId(path));}
         public void Poll(){var notices=new List<Session>();lock(gate){try{
             string dir=Path.Combine(home,"projects");if(!Directory.Exists(dir)){Health="等待 Claude Code 创建本地会话";return;}
             DateTime now=DateTime.UtcNow;
@@ -111,24 +97,42 @@ namespace CodexFloat {
             string id=ClaudeSource.FileId(path);Session previous;sessions.TryGetValue(id,out previous);
             var s=new Session{Id=id,Platform="claude",FilePath=path,FirstSeen=DateTime.UtcNow};
             if(previous!=null){s.Title=previous.Title;s.TitleKind=previous.TitleKind;s.NotifiedKey=previous.NotifiedKey;s.DismissedTurn=previous.DismissedTurn;}
-            var t=new Track{S=s};tracks[path]=t;sessions[id]=s;
-            // Source transcripts are bounded during hydration. A larger file is
-            // incrementally read on subsequent polls without blocking the UI.
+            var t=new Track{S=s,Hydrating=true,Initial=!initialized,Previous=previous};tracks[path]=t;sessions[id]=s;
+            if(seed!=null)seed(s);
+            // Start at the final 256 KiB, discard the first partial JSON line,
+            // and then follow new bytes. Never replay the conversation history.
+            ResetTail(t,new FileInfo(path).Length);
             Read(t,notices,true);
+        }
+        void ResetTail(Track t,long length){
+            long offset=Math.Max(0,length-256L*1024);bool partial=offset>0;
+            if(offset>0)using(var f=new FileStream(t.S.FilePath,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete)){f.Position=offset-1;partial=f.ReadByte()!=10;}
+            t.Reader.Reset(offset);t.SkipFirst=partial;
+        }
+        void FinishHydration(Track t,List<Session> notices){
+            var s=t.S;var previous=t.Previous;t.Hydrating=false;
             bool running=(s.Status=="running"||s.Status=="waiting")&&(live||(DateTime.UtcNow-s.LastActivity).TotalMinutes<3);
-            s.Visible=running||(previous!=null&&previous.Visible);
+            bool unresolved=s.Status=="unknown"&&s.HasLifecycle&&live&&s.StartedAt!=DateTime.MinValue&&(DateTime.UtcNow-s.StartedAt).TotalDays<1;
+            s.Visible=running||unresolved||(previous!=null&&previous.Visible);
             if(previous!=null&&s.Terminal&&previous.DismissedTurn==s.TurnId){s.Visible=false;s.DismissedTurn=previous.DismissedTurn;}
-            if(!initialized&&previous==null&&s.Terminal)s.Visible=false;
-            if(!initialized&&s.Status=="completed"&&s.TurnId!="")s.NotifiedKey=s.Key+":"+s.TurnId;
-            if(initialized&&previous==null&&s.Terminal&&s.FinishedAt>=DateTime.UtcNow.AddSeconds(-20)){s.Visible=true;Notify(s,notices);}
-            if(s.Title=="")s.Title="Claude Code 对话 · "+id.Substring(0,8);changed=true;
+            if(t.Initial&&previous==null&&s.Terminal)s.Visible=false;
+            if(t.Initial&&s.Status=="completed"&&s.TurnId!="")s.NotifiedKey=s.Key+":"+s.TurnId;
+            if(!t.Initial&&previous==null&&s.Terminal&&s.FinishedAt>=DateTime.UtcNow.AddSeconds(-20)){s.Visible=true;Notify(s,notices);}
+            if(s.Title=="")s.Title="Claude Code 对话 · "+s.Id.Substring(0,8);changed=true;
         }
         void Read(Track t,List<Session> notices,bool hydrate){
             try{var info=new FileInfo(t.S.FilePath);if(!info.Exists)return;
-                if(info.Length<t.Reader.Offset){t.Reader.Reset(0);t.S.HasLifecycle=false;t.S.Status="unknown";}
-                t.Reader.Read(t.S.FilePath,line=>{if(ClaudeSource.Apply(line,t.S))changed=true;},16L*1024*1024);
+                if(info.Length<t.Reader.Offset){
+                    t.Previous=t.S.Copy();t.Hydrating=true;t.Initial=false;
+                    t.S.HasLifecycle=false;t.S.Status="unknown";t.S.TurnId="";t.S.LastActivity=DateTime.MinValue;t.S.StartedAt=DateTime.MinValue;t.S.FinishedAt=DateTime.MinValue;
+                    if(seed!=null)seed(t.S);ResetTail(t,info.Length);
+                }
+                long before=t.Reader.Offset;
+                t.Reader.Read(t.S.FilePath,line=>{if(t.SkipFirst){t.SkipFirst=false;return;}if(ClaudeSource.Apply(line,t.S))changed=true;},256L*1024);
+                BytesRead+=Math.Max(0,t.Reader.Offset-before);
                 t.WriteAt=info.LastWriteTimeUtc;t.Length=info.Length;
                 if(t.Reader.Offset<info.Length)dirty[t.S.FilePath]=1;
+                if(t.Hydrating){if(t.Reader.Offset>=info.Length)FinishHydration(t,notices);else t.S.Visible=false;return;}
                 if(!hydrate&&t.S.Visible&&t.S.Status=="completed"&&t.Reader.Offset>=info.Length)Notify(t.S,notices);
             }catch(IOException){}catch(UnauthorizedAccessException){}
         }

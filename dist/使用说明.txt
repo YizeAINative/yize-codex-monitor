@@ -1,4 +1,4 @@
-一泽的 AI Agent 任务监控 1.2.0
+一泽的 AI Agent 任务监控 1.3.0
 
 双击 CodexFloat.exe 即可运行。
 
@@ -9,20 +9,22 @@
 • 本轮完成：变为绿色，并弹出提醒、响铃一次。
 • 继续提问：同一行重新转圈，下轮结束再次提醒。
 • 点击对话标题：打开对应的 Codex 对话。
-• 拖动顶部移动窗口，右下角调整宽度。
-• 三个点菜单：勾选监控 Codex / WorkBuddy / Claude Code，并设置置顶、声音、提醒、开机启动和退出。
-• Claude Code 使用浅橙色分区；点击条目在终端恢复对应会话。
+• 按住顶部空白或名称拖动窗口，右下角调整宽度。
+• 三个点菜单：勾选监控 Codex / WorkBuddy / Claude 桌面端 Code，并设置置顶、声音、提醒、开机启动和退出。
+• Claude 桌面端 Code 使用浅橙色分区；点击条目打开 Claude 桌面端对应的 Code 会话，不启动终端。
 • 关闭某个平台：停止读取、隐藏对应条目并停止提醒；重新勾选不补播旧通知。
 • 右上角减号：收起到托盘；双击托盘图标或再次运行程序可恢复。
 • 清除完成只清除本工具的列表，不会删除聊天。
 
 绿色表示“本轮结束”。主动中断不会误标为完成。
-仅监控本机 Codex / WorkBuddy / Claude Code 会话，全程本地运行，不调用模型。
+仅监控本机 Codex / WorkBuddy / Claude 桌面端 Code 会话，全程本地运行，不调用模型。
 
 设置与监控记录：%LOCALAPPDATA%\CodexFloat
 默认会话来源：%USERPROFILE%\.codex（也支持 CODEX_HOME）
 WorkBuddy 来源：%USERPROFILE%\.workbuddy 或 .workbuddy-ai（也支持 WORKBUDDY_HOME）
-Claude Code 来源：%USERPROFILE%\.claude\projects（也支持 CLAUDE_CONFIG_DIR）
+Claude 桌面端 Code：自动发现桌面端 claude-code-sessions 索引，仅跟踪关联状态日志。
+首次每个日志最多读取末尾 256 KiB，之后只读取新增部分。
+仅适配桌面端 Code，不包含 Chat、Cowork 和独立命令行任务。
 首次接入时已执行中的 WorkBuddy 任务，计时起点为估计值，前面显示 ≈。
 
 如启用开机启动，请保持 EXE 路径稳定。退出软件并删除文件即可移除便携版；删除前可在菜单关闭开机启动。

@@ -20,7 +20,7 @@ using Forms = System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("一泽的 AI Agent 任务监控")]
 [assembly: System.Reflection.AssemblyProduct("CodexFloat")]
-[assembly: System.Reflection.AssemblyVersion("1.2.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.3.0.0")]
 namespace CodexFloat {
     static class Program {
         public static string DataDir,Home,WorkBuddyHome,ClaudeHome,CapturePath="",EvidenceDir="";public static bool Demo,DebugTaskbar,PreviewSettings,RenderOnly;
@@ -29,7 +29,7 @@ namespace CodexFloat {
         [STAThread] public static int Main(string[] args) {
             Home=Arg(args,"--home",Environment.GetEnvironmentVariable("CODEX_HOME")??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".codex"));
             WorkBuddyHome=Arg(args,"--workbuddy-home",WorkBuddySource.DefaultHome());
-            ClaudeHome=Arg(args,"--claude-home",ClaudeSource.DefaultHome());
+            ClaudeHome=Arg(args,"--claude-home",ClaudeDesktopSource.DefaultHome());
             DataDir=Arg(args,"--data-dir",Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CodexFloat"));
             CapturePath=Arg(args,"--capture","");EvidenceDir=Arg(args,"--evidence-dir","");Demo=args.Contains("--demo");DebugTaskbar=args.Contains("--taskbar");PreviewSettings=args.Contains("--preview-settings");Directory.CreateDirectory(DataDir);
             RenderOnly=args.Contains("--render-preview");if(RenderOnly){Demo=true;var previewApp=new Application();var preview=new MainWindow();preview.RenderPreview(Arg(args,"--render-preview",Path.Combine(DataDir,"preview.png")));return 0;}
@@ -112,11 +112,20 @@ namespace CodexFloat {
             var outer=new Grid{Margin=new Thickness(12)};Content=outer;
             shell=new Border{Background=Theme.Background,BorderBrush=Theme.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(11),Effect=new System.Windows.Media.Effects.DropShadowEffect{Color=Colors.Black,Opacity=.12,BlurRadius=18,ShadowDepth=3}};outer.Children.Add(shell);
             var layout=new Grid();layout.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});layout.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});layout.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});shell.Child=layout;
-            var header=new Grid{Margin=new Thickness(16,10,10,9),Background=Brushes.Transparent};layout.Children.Add(header);
+            var header=new Grid{Margin=new Thickness(16,10,10,9),Background=Brushes.Transparent};
+            var dragSurface=new Border{Background=Brushes.Transparent,Child=header,Cursor=Cursors.SizeAll,ToolTip="按住顶部空白处拖动"};layout.Children.Add(dragSurface);
             header.ColumnDefinitions.Add(new ColumnDefinition());header.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
             var heading=new StackPanel{Orientation=Orientation.Horizontal};heading.Children.Add(new System.Windows.Shapes.Ellipse{Width=6,Height=6,Fill=Theme.Green,Margin=new Thickness(0,0,8,0),VerticalAlignment=VerticalAlignment.Center});
             var title=Theme.Text(Program.Demo?"样式预览 · 非实时":"一泽的 AI Agent 任务监控",12,Theme.Ink);title.FontWeight=FontWeights.SemiBold;heading.Children.Add(title);header.Children.Add(heading);
-            heading.MouseLeftButtonDown+=(o,e)=>{if(e.ClickCount==2){ToggleTopmost();return;}try{DragMove();SaveSettings();}catch{}};
+            dragSurface.PreviewMouseLeftButtonDown+=(o,e)=>{
+                DependencyObject hit=e.OriginalSource as DependencyObject;
+                for(var node=hit;node!=null&&node!=dragSurface;){
+                    if(node is ButtonBase)return;
+                    var content=node as FrameworkContentElement;node=content!=null?content.Parent:VisualTreeHelper.GetParent(node);
+                }
+                e.Handled=true;if(e.ClickCount==2&&hit!=null&&heading.IsAncestorOf(hit)){ToggleTopmost();return;}
+                try{DragMove();SaveSettings();}catch(InvalidOperationException){}
+            };
             var controls=new StackPanel{Orientation=Orientation.Horizontal};Grid.SetColumn(controls,1);header.Children.Add(controls);
             pin=Theme.Button("⌖","切换置顶",25);pin.Click+=(o,e)=>ToggleTopmost();controls.Children.Add(pin);
             var menu=Theme.Button("⋯","更多设置",26);menu.Click+=(o,e)=>OpenSettingsMenu(menu);controls.Children.Add(menu);
@@ -149,11 +158,11 @@ namespace CodexFloat {
             if(Program.EvidenceDir!="")button.ContextMenu.Opened+=(o,e)=>Dispatcher.BeginInvoke(new Action(()=>{try{var cm=button.ContextMenu;cm.UpdateLayout();var bmp=new RenderTargetBitmap((int)Math.Ceiling(cm.ActualWidth*1.5),(int)Math.Ceiling(cm.ActualHeight*1.5),144,144,PixelFormats.Pbgra32);bmp.Render(cm);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bmp));Directory.CreateDirectory(Program.EvidenceDir);using(var f=File.Create(Path.Combine(Program.EvidenceDir,"settings.png")))encoder.Save(f);}catch(Exception ex){Program.Log("menu-capture",ex);}}),DispatcherPriority.ContextIdle);
             button.ContextMenu.IsOpen=true;}
         void UpdatePlatforms(){engine.Configure(settings.MonitorCodex,settings.MonitorWorkBuddy,settings.MonitorClaude);SaveSettings();signature="platform-selection-changed";Refresh();}
-        ContextMenu BuildMenu(){var m=Theme.Menu();m.Items.Add(new MenuItem{Header="监控平台",IsEnabled=false});AddCheck(m,"Codex",settings.MonitorCodex,()=>{settings.MonitorCodex=!settings.MonitorCodex;UpdatePlatforms();});AddCheck(m,"WorkBuddy",settings.MonitorWorkBuddy,()=>{settings.MonitorWorkBuddy=!settings.MonitorWorkBuddy;UpdatePlatforms();});AddCheck(m,"Claude Code",settings.MonitorClaude,()=>{settings.MonitorClaude=!settings.MonitorClaude;UpdatePlatforms();});m.Items.Add(new Separator());AddCheck(m,"始终置顶",settings.AlwaysOnTop,()=>ToggleTopmost());AddCheck(m,"完成时播放提示音",settings.Sound,()=>{settings.Sound=!settings.Sound;SaveSettings();});AddCheck(m,"完成时弹出提醒",settings.Notifications,()=>{settings.Notifications=!settings.Notifications;SaveSettings();});m.Items.Add(new Separator());
+        ContextMenu BuildMenu(){var m=Theme.Menu();m.Items.Add(new MenuItem{Header="监控平台",IsEnabled=false});AddCheck(m,"Codex",settings.MonitorCodex,()=>{settings.MonitorCodex=!settings.MonitorCodex;UpdatePlatforms();});AddCheck(m,"WorkBuddy",settings.MonitorWorkBuddy,()=>{settings.MonitorWorkBuddy=!settings.MonitorWorkBuddy;UpdatePlatforms();});AddCheck(m,"Claude 桌面端 Code",settings.MonitorClaude,()=>{settings.MonitorClaude=!settings.MonitorClaude;UpdatePlatforms();});m.Items.Add(new Separator());AddCheck(m,"始终置顶",settings.AlwaysOnTop,()=>ToggleTopmost());AddCheck(m,"完成时播放提示音",settings.Sound,()=>{settings.Sound=!settings.Sound;SaveSettings();});AddCheck(m,"完成时弹出提醒",settings.Notifications,()=>{settings.Notifications=!settings.Notifications;SaveSettings();});m.Items.Add(new Separator());
             var test=new MenuItem{Header="测试完成提醒"};test.Click+=(o,e)=>OnCompleted(new List<Session>{new Session{Title="提醒已开启",Cwd="一泽的 AI Agent 任务监控",Status="completed"}});m.Items.Add(test);
             var reset=new MenuItem{Header="重置窗口位置"};reset.Click+=(o,e)=>{settings.Left=-99999;settings.Top=-99999;PositionWindow();SaveSettings();};m.Items.Add(reset);
             var startup=new MenuItem{Header="开机自动启动",IsCheckable=true,IsChecked=StartupEnabled()};startup.Click+=(o,e)=>SetStartup(startup.IsChecked);m.Items.Add(startup);
-            m.Items.Add(new Separator());var about=new MenuItem{Header="关于 / 使用说明"};about.Click+=(o,e)=>MessageBox.Show(this,"一泽的 AI Agent 任务监控 1.2.0\n\n支持 Codex / WorkBuddy / Claude Code，在菜单中勾选监控平台。\n新一轮开始会自动加入列表。\n绿色代表本轮结束，点击标题打开对应对话。\n中断不会标为完成；状态待确认时不会误报。\n完成项保留到手动清除。\n拖动顶部移动；右下角调整宽度。\n\n仅在本机读取会话元数据，无网络请求。\n配置与监控记录："+Program.DataDir+"\n\n项目：github.com/YizeAINative/yize-codex-monitor\n参考：github.com/LH-03/agent-monitor-hud", "关于一泽的 AI Agent 任务监控");m.Items.Add(about);
+            m.Items.Add(new Separator());var about=new MenuItem{Header="关于 / 使用说明"};about.Click+=(o,e)=>MessageBox.Show(this,"一泽的 AI Agent 任务监控 1.3.0\n\n支持 Codex / WorkBuddy / Claude 桌面端 Code，在菜单中勾选监控平台。\n新一轮开始会自动加入列表。\n绿色代表本轮结束，点击标题打开对应对话。\n中断不会标为完成；状态待确认时不会误报。\n完成项保留到手动清除。\n拖动顶部移动；右下角调整宽度。\n\n仅在本机读取会话元数据，无网络请求。\n配置与监控记录："+Program.DataDir+"\n\n项目：github.com/YizeAINative/yize-codex-monitor\n参考：github.com/LH-03/agent-monitor-hud", "关于一泽的 AI Agent 任务监控");m.Items.Add(about);
             var exit=new MenuItem{Header="退出软件"};exit.Click+=(o,e)=>Exit();m.Items.Add(exit);return m;}
         void AddCheck(ContextMenu m,string name,bool check,Action action){var item=new MenuItem{Header=name,IsCheckable=true,IsChecked=check};item.Click+=(o,e)=>action();m.Items.Add(item);}
         bool StartupEnabled(){using(var key=Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))return key!=null&&key.GetValue("CodexFloat")!=null;}
@@ -208,7 +217,7 @@ namespace CodexFloat {
         }
         static string StateText(string state){return state=="running"?"处理中":state=="completed"?"本轮已完成":state=="interrupted"?"已中断":state=="failed"?"执行失败":state=="waiting"?"等待输入":"状态待确认";}
         static string Duration(Session s){if(s.StartedAt==DateTime.MinValue)return "";var span=(s.FinishedAt==DateTime.MinValue?DateTime.UtcNow:s.FinishedAt)-s.StartedAt;return span.TotalHours>=1?((int)span.TotalHours)+" 小时 "+span.Minutes+" 分钟":Math.Max(0,(int)span.TotalMinutes)+" 分钟";}
-        public void OpenSession(Session session){if(Program.Demo||string.IsNullOrEmpty(session.Id))return;try{string uri;if(session.Platform=="claude"){uri="claude "+ClaudeSource.ResumeArguments(session.Id);Process.Start(ClaudeSource.ResumeStartInfo(session));}else{uri=session.Platform=="workbuddy"?WorkBuddySource.DeepLink(session.Id):Rollout.DeepLink(session.Id);Process.Start(new ProcessStartInfo(uri){UseShellExecute=true});}Json.Save(Path.Combine(Program.DataDir,"last-open.json"),new{platform=session.Platform,threadId=session.Id,uri=uri,openedAt=DateTime.UtcNow});}catch(Exception ex){MessageBox.Show(this,"无法打开 "+session.PlatformName+" 对话。\n\n"+ex.Message,"打开对话");}}
+        public void OpenSession(Session session){if(Program.Demo||string.IsNullOrEmpty(session.Id))return;try{string uri;if(session.Platform=="claude"){uri=ClaudeDesktopSource.DeepLink(session);Process.Start(new ProcessStartInfo(uri){UseShellExecute=true});}else{uri=session.Platform=="workbuddy"?WorkBuddySource.DeepLink(session.Id):Rollout.DeepLink(session.Id);Process.Start(new ProcessStartInfo(uri){UseShellExecute=true});}Json.Save(Path.Combine(Program.DataDir,"last-open.json"),new{platform=session.Platform,threadId=session.Id,uri=uri,openedAt=DateTime.UtcNow});}catch(Exception ex){MessageBox.Show(this,"无法打开 "+session.PlatformName+" 对话。\n\n"+ex.Message,"打开对话");}}
         void OnCompleted(List<Session> items){Refresh();items=items.Where(s=>s.Id==""||latest.Any(current=>current.Key==s.Key&&current.TurnId==s.TurnId&&current.Status=="completed")).ToList();if(items.Count==0)return;if(settings.Sound)Task.Run(()=>System.Media.SystemSounds.Asterisk.Play());if(!settings.Notifications)return;
             if(toast!=null){toast.Close();toast=null;}toast=new ToastWindow(items,OpenSession);toast.Show();try{Json.Save(Path.Combine(Program.DataDir,"last-notification.json"),new{at=DateTime.UtcNow,sound=settings.Sound,sessions=items.Select(s=>new{id=s.Id,turnId=s.TurnId,title=s.Label}).ToArray()});}catch{}}
         void Capture(string path){try{UpdateLayout();var bmp=new RenderTargetBitmap((int)Math.Ceiling(ActualWidth*1.5),(int)Math.Ceiling(ActualHeight*1.5),144,144,PixelFormats.Pbgra32);bmp.Render(this);var enc=new PngBitmapEncoder();enc.Frames.Add(BitmapFrame.Create(bmp));Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));using(var f=File.Create(path))enc.Save(f);}catch(Exception ex){Program.Log("capture",ex);}}

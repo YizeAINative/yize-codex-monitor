@@ -31,7 +31,7 @@ namespace CodexFloat {
         public bool Visible, HasLifecycle, IsChild, TimerEstimated;
         public Session Copy() { return (Session)MemberwiseClone(); }
         public string Key { get { return (Platform ?? "codex") + ":" + Id; } }
-        public string PlatformName { get { return Platform == "workbuddy" ? "WorkBuddy" : Platform == "claude" ? "Claude Code" : "Codex"; } }
+        public string PlatformName { get { return Platform == "workbuddy" ? "WorkBuddy" : Platform == "claude" ? "Claude 桌面端 Code" : "Codex"; } }
         public string RuntimeText(DateTime now){
             if(StartedAt==DateTime.MinValue)return "--:--";
             DateTime end=FinishedAt!=DateTime.MinValue?FinishedAt:(Status=="unknown"&&LastActivity!=DateTime.MinValue?LastActivity:now);
