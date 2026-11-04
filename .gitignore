@@ -1,0 +1,8 @@
+test-data/
+dist/*.exe
+release/
+reference/
+*.tmp
+*.log
+.env
+.env.*
