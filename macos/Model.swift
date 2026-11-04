@@ -28,15 +28,20 @@ func elapsed(_ row: TaskRow, now: Date = Date()) -> String {
     let seconds = max(0, Int(end.timeIntervalSince(start)))
     return (row.estimated ? "≈" : "") + (seconds >= 3600 ? String(format: "%02d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60) : String(format: "%02d:%02d", seconds / 60, seconds % 60))
 }
+func runningProjectCount(_ rows: [TaskRow]) -> Int {
+    Set(rows.filter { $0.state == "运行中" }.map { $0.cwd.isEmpty ? $0.key : URL(fileURLWithPath: $0.cwd).standardizedFileURL.resolvingSymlinksInPath().path }).count
+}
 struct Settings: Codable {
     var enabled = ["codex": true, "workbuddy": false, "claude": false]
     var sound = false, notifications = true, pinned = true
     var collapsed = Set<String>()
+    var immersive = false
     var displayName = "AI Agent 任务监控", setupCompleted = false
-    enum CodingKeys: String, CodingKey { case enabled, sound, notifications, pinned, collapsed, displayName, setupCompleted }
+    enum CodingKeys: String, CodingKey { case immersive, enabled, sound, notifications, pinned, collapsed, displayName, setupCompleted }
     init() {}
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        immersive = try c.decodeIfPresent(Bool.self, forKey: .immersive) ?? false
         enabled = try c.decodeIfPresent([String: Bool].self, forKey: .enabled) ?? enabled
         sound = try c.decodeIfPresent(Bool.self, forKey: .sound) ?? sound
         notifications = try c.decodeIfPresent(Bool.self, forKey: .notifications) ?? notifications

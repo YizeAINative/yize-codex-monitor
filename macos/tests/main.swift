@@ -94,4 +94,12 @@ check(legacy.configured(name:"  ",agents:["codex":true]) == nil && legacy.config
 let configured = legacy.configured(name:"  我的工作台  ",agents:["codex":true])!
 let decoded = try JSONDecoder().decode(Settings.self,from:JSONEncoder().encode(configured))
 check(decoded.setupCompleted && decoded.displayName == "我的工作台" && decoded.enabled["claude"] == false && !decoded.notifications, "name and agents persist without resetting other preferences")
+var pa = TaskRow(); pa.cwd = "/one/project"; pa.state = "运行中"
+var pb = pa; pb.id = "second"; pb.platform = "claude"
+var pc = pa; pc.cwd = "/two/project"
+var pd = pa; pd.cwd = "/waiting"; pd.state = "等待输入"
+check(runningProjectCount([pa,pb,pc,pd]) == 2, "compact counts unique running paths across agents")
+check(runningProjectCount([]) == 0 && runningProjectCount([pd]) == 0, "compact excludes waiting and empty states")
+var mini = configured; mini.immersive = true
+check(try! JSONDecoder().decode(Settings.self,from:JSONEncoder().encode(mini)).immersive, "compact preference persists")
 print("PASS: \(checks) checks")

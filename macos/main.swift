@@ -11,6 +11,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let monitor = Monitor(home: URL(fileURLWithPath: codexPath), data: URL(fileURLWithPath: dataPath))
     let queue = DispatchQueue(label: "local.codex.monitor", qos: .utility)
     var window: NSWindow!, stack: NSStackView!, tabs: NSSegmentedControl!, footer: NSTextField!, scroll: NSScrollView!, status: NSStatusItem!
+    var compact: NSPanel!, compactCount: NSButton!
     var toastTarget: URL?
     var timer: Timer?, clockTimer: Timer?, toastTimer: Timer?, toast: NSPanel?
     var recent = false, polling = false, rows = [TaskRow](), current = [TaskRow](), history = [TaskRow](), settings = Settings()
@@ -27,6 +28,14 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.title = settings.displayName; window.delegate = self; window.isReleasedWhenClosed = false; window.minSize = NSSize(width: 400, height: 280)
         window.appearance = NSAppearance(named: .aqua); window.backgroundColor = NSColor(calibratedRed: 0.966, green: 0.975, blue: 0.953, alpha: 1)
         window.level = settings.pinned ? .floating : .normal; window.setFrameAutosaveName("MonitorWindowV2"); if !window.setFrameUsingName("MonitorWindowV2") { window.center() }
+        let accessory = NSTitlebarAccessoryViewController(); accessory.layoutAttribute = .right
+        let shrink = NSButton(title: "沉浸", target: self, action: #selector(toggleImmersive)); shrink.bezelStyle = .inline; shrink.frame = NSRect(x: 0, y: 0, width: 56, height: 24); shrink.toolTip = "只显示运行中的项目数"; accessory.view = shrink; window.addTitlebarAccessoryViewController(accessory)
+        compact = NSPanel(contentRect: NSRect(x: window.frame.minX, y: window.frame.maxY - 86, width: 132, height: 86), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        compact.isReleasedWhenClosed = false; compact.isOpaque = false; compact.backgroundColor = .clear; compact.hasShadow = true; compact.isMovableByWindowBackground = true; compact.hidesOnDeactivate = false; compact.level = settings.pinned ? .floating : .normal
+        let box = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 132, height: 86)); box.material = .hudWindow; box.state = .active; box.wantsLayer = true; box.layer?.cornerRadius = 14; box.layer?.masksToBounds = true; compact.contentView = box
+        let caption = label("运行中的项目", size: 11, color: .secondaryLabelColor); caption.alignment = .center; caption.frame = NSRect(x: 8, y: 58, width: 116, height: 18); box.addSubview(caption)
+        compactCount = NSButton(title: "0", target: self, action: #selector(expand)); compactCount.isBordered = false; compactCount.font = .monospacedDigitSystemFont(ofSize: 30, weight: .semibold); compactCount.frame = NSRect(x: 8, y: 14, width: 116, height: 42); compactCount.toolTip = "点击展开完整窗口；拖动盒子上方可移动"; compactCount.setAccessibilityLabel("运行中的项目数，点击展开"); box.addSubview(compactCount)
+        compact.setFrameAutosaveName("MonitorCompactV1"); _ = compact.setFrameUsingName("MonitorCompactV1")
         let root = window.contentView!
         tabs = NSSegmentedControl(labels: ["当前任务", "最近完成"], trackingMode: .selectOne, target: self, action: #selector(changeTab)); tabs.selectedSegment = 0; tabs.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(tabs)
         scroll = NSScrollView(); scroll.translatesAutoresizingMaskIntoConstraints = false; scroll.hasVerticalScroller = true; scroll.drawsBackground = false
@@ -42,14 +51,19 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if !settings.setupCompleted { configureApp() }
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); return false }
-    @objc func show() { window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
+    @objc func show() {
+        if settings.immersive && settings.setupCompleted { window?.orderOut(nil); compact?.orderFrontRegardless() }
+        else { compact?.orderOut(nil); window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
+    }
+    @objc func toggleImmersive() { settings.immersive.toggle(); saveSettings(); show() }
+    @objc func expand() { settings.immersive = false; saveSettings(); show() }
     @objc func quit() { timer?.invalidate(); queue.sync { monitor.persist() }; NSApp.terminate(nil) }
     func buildMenu() {
         menu = NSMenu()
         func add(_ title: String, _ action: Selector, _ check: Bool? = nil, tag: Int = 0) { let i = menu.addItem(withTitle: title, action: action, keyEquivalent: ""); i.target = self; i.tag = tag; if let check { i.state = check ? .on : .off } }
         add("显示 " + settings.displayName, #selector(show)); add("名称与监控设置…", #selector(configureApp)); menu.addItem(.separator())
         for (i, p) in ["Codex", "WorkBuddy", "Claude 桌面端 Code"].enumerated() { add(p, #selector(togglePlatform(_:)), settings.enabled[["codex", "workbuddy", "claude"][i]] == true, tag: i) }
-        menu.addItem(.separator()); add("始终置顶", #selector(togglePin), settings.pinned); add("完成提示音", #selector(toggleSound), settings.sound); add("完成时弹出提醒", #selector(toggleNotifications), settings.notifications)
+        menu.addItem(.separator()); add("沉浸模式", #selector(toggleImmersive), settings.immersive); add("始终置顶", #selector(togglePin), settings.pinned); add("完成提示音", #selector(toggleSound), settings.sound); add("完成时弹出提醒", #selector(toggleNotifications), settings.notifications)
         add("测试完成提醒", #selector(testNotification)); add("重置窗口位置", #selector(resetPosition)); add("登录时自动启动", #selector(toggleStartup), SMAppService.mainApp.status == .enabled)
         menu.addItem(.separator()); add("诊断与使用说明", #selector(about)); add("退出", #selector(quit)); status.menu = menu
     }
@@ -81,12 +95,12 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
     func saveSettings() { let value = settings; queue.async { self.monitor.settings = value; self.monitor.persist() }; signature = ""; buildMenu(); render() }
-    @objc func togglePin() { settings.pinned.toggle(); window.level = settings.pinned ? .floating : .normal; saveSettings() }
+    @objc func togglePin() { settings.pinned.toggle(); window.level = settings.pinned ? .floating : .normal; compact.level = window.level; saveSettings() }
     @objc func toggleSound() { settings.sound.toggle(); saveSettings() }
     @objc func toggleNotifications() { settings.notifications.toggle(); saveSettings() }
     @objc func togglePlatform(_ sender: NSMenuItem) { let p = ["codex", "workbuddy", "claude"][sender.tag]; let enabled = settings.enabled[p] != true; settings.enabled[p] = enabled; queue.async { self.monitor.configure(p, enabled: enabled) }; saveSettings(); poll() }
     @objc func toggleStartup() { do { if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() } else { try SMAppService.mainApp.register() }; buildMenu() } catch { let alert = NSAlert(); alert.messageText = "自动启动设置未完成"; alert.informativeText = error.localizedDescription + "\n可在系统设置 → 通用 → 登录项中检查。"; alert.runModal() } }
-    @objc func resetPosition() { window.setContentSize(NSSize(width: 500, height: 590)); window.center() }
+    @objc func resetPosition() { if let screen = NSScreen.main?.visibleFrame { compact.setFrameOrigin(NSPoint(x: screen.maxX - 156, y: screen.maxY - 110)) }; window.setContentSize(NSSize(width: 500, height: 590)); window.center() }
     @objc func about() { let alert = NSAlert(); alert.messageText = settings.displayName; alert.informativeText = "监控 Codex / WorkBuddy / Claude 桌面端 Code。只读本地数据，不调用模型。\n绿色表示本轮结束，不代表整个业务目标完成。\n当前列表与最近 200 条完成记录独立保存。右键完成项可单独加入完成，项目标题可折叠。\n\n" + health + "\n\n状态目录：" + dataPath; alert.runModal() }
     @objc func testNotification() { var row = TaskRow(); row.title = "提醒已开启"; row.project = "任务监控"; notify([row]) }
     func poll() { guard settings.setupCompleted, !polling else { return }; polling = true
@@ -102,6 +116,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func collapse(_ sender: NSButton) { let key = sender.identifier!.rawValue; if settings.collapsed.contains(key) { settings.collapsed.remove(key) } else { settings.collapsed.insert(key) }; saveSettings() }
     func label(_ text: String, size: CGFloat, color: NSColor = .labelColor, bold: Bool = false) -> NSTextField { let v = NSTextField(labelWithString: text); v.font = .systemFont(ofSize: size, weight: bold ? .semibold : .regular); v.textColor = color; v.lineBreakMode = .byTruncatingTail; v.setContentCompressionResistancePriority(.init(1), for: .horizontal); return v }
     func render() {
+        compactCount?.title = String(runningProjectCount(current))
+        compact?.title = settings.displayName + " · 沉浸模式"
         tabs.setLabel("当前任务  \(current.count)", forSegment: 0); tabs.setLabel("最近完成  \(history.count)", forSegment: 1)
         footer.stringValue = "\(current.filter { $0.state == "运行中" }.count) 个运行中 · \(current.filter { $0.state == "完成" }.count) 个完成"; footer.toolTip = health
         let shown = recent ? history : current
