@@ -1,0 +1,60 @@
+# macOS 原生版
+
+以 Windows v1.6.0 的会话与轮次逻辑为依据，用 Swift/AppKit 实现。Windows C# 源码保留，Mac 入口为 `main.swift`，监控核心为 `Model.swift`。
+
+## 构建和运行
+
+需要 macOS 13+、Xcode Command Line Tools；不需要 Python、Node.js、.NET 或额外下载依赖。
+
+```bash
+bash macos/test.sh
+bash macos/build.sh
+open "dist/Codex Monitor.app"
+```
+
+构建本机架构（Apple Silicon 或 Intel），使用本地临时签名；未做 Developer ID 公证。请保持应用位置稳定，尤其是启用自动启动后。
+
+## 监控规则
+
+- Codex：默认 `~/.codex`，支持 `CODEX_HOME` 和 `--home`。读取标题索引、项目归属、根会话生命周期；过滤内部子代理。首次反向提取最近轮次，随后按偏移增量读取。不会每轮重新解析工具输出。
+- WorkBuddy：自动发现 `~/.workbuddy-ai/workbuddy.db` 或 `~/.workbuddy/workbuddy.db`，支持 `WORKBUDDY_HOME`。SQLite 只读查询会话元数据。working/planning → 运行中，pending → 等待输入，completed → 完成，terminated → 中断，failed/error → 失败；归档或删除后移出当前列表。首次接入的执行计时使用状态时间估算，带 `≈`。
+- Claude：默认 `~/Library/Application Support/Claude/claude-code-sessions`，支持 `CLAUDE_DESKTOP_HOME`。仅接入桌面 Code 索引所关联的 `~/.claude/projects` 日志（支持 `CLAUDE_CONFIG_DIR`），不接入普通 Chat/Cowork 或独立 CLI 会话。初次最多读取日志末尾 256 KiB，后续每轮最多增量 256 KiB；索引提供缺失开始时间时带 `≈`。中断和 turn_duration 不判为成功。
+- 运行状态同时核对平台进程；Codex 安静超过三分钟时还检查日志写入描述符。没有依据时回到待确认，不伪造完成。Claude 要求桌面程序派生的 stream-json 工作进程，打开窗口本身不算执行。
+- 开始新轮次自动加入当前列表；忽略其他轮次迟到的结束事件。完成/中断/失败冻结计时，缺失起点显示 `--:--`。
+- 目录约每十秒补查，已知文件每 0.8 秒检查增量；进程依据每五秒更新，计时每秒更新。采集在后台串行队列运行，内容未变化时保留界面。
+
+## 当前列表与完成历史
+
+首次启动不导入全部历史完成对话、不补播提醒。完成快照独立保存最近 200 轮，最近完成页面每个会话仅展示最新一次，按完成时间倒序组织项目。继续提问、清除当前、关闭平台、重启均不删除已保存历史。
+
+「清除完成」移出当前列表中完成、中断、失败项；右键完成任务「加入完成」可单独移出。移出标记按会话及轮次保存，新轮次自动重新加入。运行中和等待输入不可手动当作完成。保存失败时不执行移出。
+
+按完整项目路径分组，目录同名不会合并；项目显示名支持 Codex 的项目配置。点击项目标题折叠，折叠状态保存；点击任务跳转对应平台。
+
+## 设置与保存
+
+菜单栏「◉ AI」可选择平台、置顶、声音、弹出提醒、测试提醒、重置窗口和登录自启动。声音默认关闭，沿用此前版本的声音选择。取消平台勾选停止读取并隐藏当前项；重新开启不补播暂停期间提醒，历史页仍保留。完成提醒按会话与轮次去重并保存，重启不重复提醒。
+
+点击窗口关闭按钮隐藏到菜单栏，「显示监控」或再次启动可找回。重复启动同一状态目录只保留一个实例。窗口位置和大小由 AppKit 保存。
+
+登录自启动使用 macOS 的 `SMAppService.mainApp`，仅用户勾选时注册；若系统要求批准，可在系统设置 → 通用 → 登录项中管理。未自动启用。
+
+默认状态目录：`~/Library/Application Support/CodexFloatMac`，可用 `--data-dir` 隔离。
+
+- `current-tasks.json`：当前任务快照、按轮次移出标记、提醒去重字段。
+- `completion-history.json`：独立完成快照。
+- `settings.json`：平台开关、置顶、声音、提醒、项目折叠。
+
+文件采用原子替换，保留 `.bak`；主文件损坏尝试上一版。不会修改平台聊天记录或配置，不保存消息正文，不发起网络请求。SQLite 在没有 WAL 文件时使用只读 immutable URI，避免试图创建源库共享内存文件；有 WAL 时使用正常只读模式读取事务视图。
+
+诊断只输出数量和连接状态：
+
+```bash
+"dist/Codex Monitor.app/Contents/MacOS/CodexMonitor" --dump --data-dir ./work/diagnostic-state
+```
+
+## 验证范围
+
+`macos/test.sh` 的 42 项隔离检查覆盖轮次隔离、增量和 UTF-8 边界、大文件恢复、启动去噪、历史去重与容量、重启恢复、移出后重新提问、平台开关、WorkBuddy SQLite 状态、Claude 桌面身份/结束/中断、备份恢复等。它们是 Mac 专用验收，不等同于已在 Mac 执行上游的 162 项 .NET 与 12 项 WPF 检查。
+
+本机三平台的来源读取已检查；真实任务完成通知、退出平台和重新登录等场景的覆盖程度以随版本提供的验收记录为准。操作系统可能限制进程或文件描述符检查；无法确认时显示待确认。首次 Claude 尾部缺少事件时依赖桌面索引，可能只能提供估算或待确认状态。

@@ -6,3 +6,8 @@ reference/
 *.log
 .env
 .env.*
+
+# macOS build artifacts
+work/
+dist/*.app/
+.DS_Store

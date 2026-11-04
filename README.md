@@ -1,5 +1,9 @@
 # 一泽的 AI Agent 任务监控
 
+## macOS fork
+
+此 fork 增加 Swift/AppKit 原生 Mac 版本，迁移 Codex / WorkBuddy / Claude 桌面端 Code 的轮次、持久化和提醒逻辑。构建、使用和验证范围见 [macos/README.md](macos/README.md)。下文为上游 Windows 版说明。
+
 独立的 Windows 悬浮小软件。支持 **Codex / WorkBuddy / Claude 桌面端 Code**，可勾选监控平台；以项目分组展示当前对话，开始执行自动加入，运行中转圈并实时计时，本轮完成变绿并提醒，点击标题打开对应平台的对话。
 
 顶部提供 **当前任务 / 最近完成** 两个标签页。完成记录独立保存最近 200 条，清除当前列表、继续提问、取消平台勾选或重启软件，都不会删除已保存的完成记录。
