@@ -15,7 +15,7 @@ func append(_ value: [String: Any], to url: URL = file) throws { let f = try Fil
 try json(["type":"session_meta", "payload":["id":id,"cwd":"/a/shared"]]).write(to:file)
 try append(event("task_started", turn:"one", at:now.addingTimeInterval(-65)))
 var live = Runtime(); live.codex = true; live.workbuddy = true; live.claude = true; live.writers.insert(file.path)
-func engine(_ data: URL = state) -> Monitor { let m = Monitor(home:home, data:data, wb:wb, desktop:desktop, transcripts:claude); m.settings.enabled = ["codex":true,"workbuddy":true,"claude":true]; return m }
+func engine(_ data: URL = state) -> Monitor { let m = Monitor(home:home, data:data, wb:wb, desktop:desktop, transcripts:claude); m.settings.automaticAgents = false; m.settings.enabled = ["codex":true,"workbuddy":true,"claude":true]; return m }
 let m = engine(); m.poll(runtime:live)
 check(m.current.count == 1 && m.current[0].state == "运行中", "initial active discovered")
 check(elapsed(m.current[0]).hasPrefix("01:"), "runtime from start")
@@ -102,4 +102,20 @@ check(runningProjectCount([pa,pb,pc,pd]) == 2, "compact counts unique running pa
 check(runningProjectCount([]) == 0 && runningProjectCount([pd]) == 0, "compact excludes waiting and empty states")
 var mini = configured; mini.immersive = true
 check(try! JSONDecoder().decode(Settings.self,from:JSONEncoder().encode(mini)).immersive, "compact preference persists")
+let automaticMonitor = engine(root.appendingPathComponent("auto-state")); automaticMonitor.settings.automaticAgents = true
+let manualChoices = automaticMonitor.settings.enabled
+var justCodex = Runtime(); justCodex.codex = true
+ automaticMonitor.poll(runtime:justCodex)
+check(automaticMonitor.selectedPlatforms == ["codex"] && automaticMonitor.health["workbuddy"] == nil, "auto selects only running supported clients")
+var desktopOnly = Runtime(); desktopOnly.claudeDesktopOpen = true
+ automaticMonitor.poll(runtime:desktopOnly)
+check(automaticMonitor.selectedPlatforms == ["claude"] && !desktopOnly.active("claude"), "open desktop selected without claiming active code task")
+check(automaticMonitor.recent.allSatisfy { $0.platform != "claude" }, "automatic initial attach does not import old completions")
+automaticMonitor.poll(runtime:Runtime())
+check(automaticMonitor.selectedPlatforms.isEmpty && automaticMonitor.current.isEmpty, "closing clients removes automatic selection")
+check(automaticMonitor.settings.enabled == manualChoices, "auto detection preserves manual choices")
+automaticMonitor.settings.automaticAgents = false; automaticMonitor.poll(runtime:Runtime())
+check(automaticMonitor.selectedPlatforms == Set(manualChoices.keys), "manual choices restored")
+check(configured.configured(name:"Auto",agents:[:],automatic:true) != nil, "auto accepts no currently running clients")
+check(!legacy.automaticAgents && Settings().automaticAgents, "legacy manual preference retained while new users default automatic")
 print("PASS: \(checks) checks")

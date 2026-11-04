@@ -12,6 +12,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let queue = DispatchQueue(label: "local.codex.monitor", qos: .utility)
     var window: NSWindow!, stack: NSStackView!, tabs: NSSegmentedControl!, footer: NSTextField!, scroll: NSScrollView!, status: NSStatusItem!
     var compact: NSPanel!, compactCount: NSButton!
+    var detectedAgents = Set<String>(), agentChoices = [NSButton]()
     var toastTarget: URL?
     var timer: Timer?, clockTimer: Timer?, toastTimer: Timer?, toast: NSPanel?
     var recent = false, polling = false, rows = [TaskRow](), current = [TaskRow](), history = [TaskRow](), settings = Settings()
@@ -62,7 +63,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu = NSMenu()
         func add(_ title: String, _ action: Selector, _ check: Bool? = nil, tag: Int = 0) { let i = menu.addItem(withTitle: title, action: action, keyEquivalent: ""); i.target = self; i.tag = tag; if let check { i.state = check ? .on : .off } }
         add("显示 " + settings.displayName, #selector(show)); add("名称与监控设置…", #selector(configureApp)); menu.addItem(.separator())
-        for (i, p) in ["Codex", "WorkBuddy", "Claude 桌面端 Code"].enumerated() { add(p, #selector(togglePlatform(_:)), settings.enabled[["codex", "workbuddy", "claude"][i]] == true, tag: i) }
+        add("自动识别本机运行的 Agent", #selector(toggleAutomatic), settings.automaticAgents)
+        for (i, p) in ["Codex", "WorkBuddy", "Claude 桌面端 Code"].enumerated() { let id = ["codex", "workbuddy", "claude"][i]; add(p, #selector(togglePlatform(_:)), settings.automaticAgents ? detectedAgents.contains(id) : settings.enabled[id] == true, tag: i); menu.items.last?.isEnabled = !settings.automaticAgents }
         menu.addItem(.separator()); add("沉浸模式", #selector(toggleImmersive), settings.immersive); add("始终置顶", #selector(togglePin), settings.pinned); add("完成提示音", #selector(toggleSound), settings.sound); add("完成时弹出提醒", #selector(toggleNotifications), settings.notifications)
         add("测试完成提醒", #selector(testNotification)); add("重置窗口位置", #selector(resetPosition)); add("登录时自动启动", #selector(toggleStartup), SMAppService.mainApp.status == .enabled)
         menu.addItem(.separator()); add("诊断与使用说明", #selector(about)); add("退出", #selector(quit)); status.menu = menu
@@ -72,21 +74,23 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let alert = NSAlert(); alert.messageText = initial ? "设置你的任务监控" : "名称与监控设置"
         alert.informativeText = "设置窗口和提醒中显示的名称，再选择要监控的 Agent。之后可以从菜单栏修改。"
         alert.addButton(withTitle: initial ? "开始监控" : "保存设置"); alert.addButton(withTitle: initial ? "退出" : "取消")
-        let form = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 230))
-        let caption = label("显示名称", size: 12, bold: true); caption.frame = NSRect(x: 0, y: 202, width: 360, height: 20); form.addSubview(caption)
-        let name = NSTextField(string: settings.displayName); name.placeholderString = "例如：我的 AI 工作台"; name.frame = NSRect(x: 0, y: 168, width: 360, height: 28); name.setAccessibilityLabel("显示名称"); form.addSubview(name)
-        let hint = label("1–40 个字符，用于窗口标题、菜单和完成提醒", size: 11, color: .secondaryLabelColor); hint.frame = NSRect(x: 0, y: 142, width: 360, height: 18); form.addSubview(hint)
-        let heading = label("监控的 Agent（至少选择一个）", size: 12, bold: true); heading.frame = NSRect(x: 0, y: 112, width: 360, height: 20); form.addSubview(heading)
+        let form = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 290))
+        let caption = label("显示名称", size: 12, bold: true); caption.frame = NSRect(x: 0, y: 262, width: 360, height: 20); form.addSubview(caption)
+        let name = NSTextField(string: settings.displayName); name.placeholderString = "例如：我的 AI 工作台"; name.frame = NSRect(x: 0, y: 228, width: 360, height: 28); name.setAccessibilityLabel("显示名称"); form.addSubview(name)
+        let hint = label("1–40 个字符，用于窗口标题、菜单和完成提醒", size: 11, color: .secondaryLabelColor); hint.frame = NSRect(x: 0, y: 202, width: 360, height: 18); form.addSubview(hint)
+        let automatic = NSButton(checkboxWithTitle: "根据本机运行的 Agent 自动选择", target: self, action: #selector(autoChoiceChanged(_:))); automatic.state = settings.automaticAgents ? .on : .off; automatic.frame = NSRect(x: 0, y: 160, width: 360, height: 24); form.addSubview(automatic)
+        let supported = label("自动识别 Codex / WorkBuddy / Claude 桌面端", size: 10, color: .secondaryLabelColor); supported.frame = NSRect(x: 0, y: 138, width: 360, height: 18); form.addSubview(supported)
+        let heading = label("手动选择（关闭自动识别后可修改）", size: 12, bold: true); heading.frame = NSRect(x: 0, y: 112, width: 360, height: 20); form.addSubview(heading)
         let ids = ["codex", "workbuddy", "claude"], names = ["Codex", "WorkBuddy", "Claude 桌面端 Code"]
         var choices = [NSButton]()
-        for i in 0..<3 { let button = NSButton(checkboxWithTitle: names[i], target: nil, action: nil); button.state = settings.enabled[ids[i]] == true ? .on : .off; button.frame = NSRect(x: 0, y: 80 - i * 28, width: 350, height: 24); form.addSubview(button); choices.append(button) }
+        for i in 0..<3 { let button = NSButton(checkboxWithTitle: names[i], target: nil, action: nil); button.state = settings.enabled[ids[i]] == true ? .on : .off; button.frame = NSRect(x: 0, y: 80 - i * 28, width: 350, height: 24); form.addSubview(button); button.isEnabled = !settings.automaticAgents; choices.append(button) }; agentChoices = choices
         let error = label("", size: 11, color: .systemRed); error.frame = NSRect(x: 0, y: 0, width: 360, height: 18); form.addSubview(error)
         alert.accessoryView = form; alert.window.initialFirstResponder = name
         while true {
             show()
             guard alert.runModal() == .alertFirstButtonReturn else { if initial { quit() }; return }
             let agents = Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($0.element, choices[$0.offset].state == .on) })
-            guard let next = settings.configured(name: name.stringValue, agents: agents) else { error.stringValue = "请填写 1–40 字名称，并至少选择一个 Agent。"; continue }
+            guard let next = settings.configured(name: name.stringValue, agents: agents, automatic: automatic.state == .on) else { error.stringValue = "请填写名称；手动模式需至少选择一个 Agent。"; continue }
             let saved = queue.sync { monitor.store.save(next, "settings.json") }
             guard saved else { error.stringValue = "设置未能保存，请检查状态目录的写入权限。"; continue }
             let old = settings; settings = next
@@ -94,6 +98,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
             window.title = next.displayName; status.button?.toolTip = next.displayName; toast?.close(); buildMenu(); signature = ""; poll(); render(); return
         }
     }
+    @objc func autoChoiceChanged(_ sender: NSButton) { for choice in agentChoices { choice.isEnabled = sender.state != .on } }
+    @objc func toggleAutomatic() { settings.automaticAgents.toggle(); saveSettings(); poll() }
     func saveSettings() { let value = settings; queue.async { self.monitor.settings = value; self.monitor.persist() }; signature = ""; buildMenu(); render() }
     @objc func togglePin() { settings.pinned.toggle(); window.level = settings.pinned ? .floating : .normal; compact.level = window.level; saveSettings() }
     @objc func toggleSound() { settings.sound.toggle(); saveSettings() }
@@ -105,8 +111,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func testNotification() { var row = TaskRow(); row.title = "提醒已开启"; row.project = "任务监控"; notify([row]) }
     func poll() { guard settings.setupCompleted, !polling else { return }; polling = true
         queue.async {
-            self.monitor.poll(); let current = self.monitor.current, history = self.monitor.recent, notices = self.monitor.notices, health = self.monitor.health.sorted { $0.key < $1.key }.map { $0.value }.joined(separator: " · ") + (self.monitor.store.error.isEmpty ? "" : " · " + self.monitor.store.error)
-            DispatchQueue.main.async { self.current = current; self.history = history; self.health = health; self.polling = false; self.render(); if !notices.isEmpty { self.notify(notices.filter { row in current.contains { $0.round == row.round && $0.state == "完成" } }) } }
+            self.monitor.poll(); let detected = self.monitor.selectedPlatforms; let current = self.monitor.current, history = self.monitor.recent, notices = self.monitor.notices, health = self.monitor.health.sorted { $0.key < $1.key }.map { $0.value }.joined(separator: " · ") + (self.monitor.store.error.isEmpty ? "" : " · " + self.monitor.store.error)
+            DispatchQueue.main.async { if self.detectedAgents != detected { self.detectedAgents = detected; self.buildMenu() }; self.current = current; self.history = history; self.health = health; self.polling = false; self.render(); if !notices.isEmpty { self.notify(notices.filter { row in current.contains { $0.round == row.round && $0.state == "完成" } }) } }
         }
     }
     @objc func changeTab() { recent = tabs.selectedSegment == 1; signature = ""; render(); scroll.contentView.scroll(to: .zero); scroll.reflectScrolledClipView(scroll.contentView) }
@@ -149,7 +155,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             }
         }
-        if rows.isEmpty { stack.addArrangedSubview(label(recent ? "暂无完成记录" : "等待新的任务", size: 14)); stack.addArrangedSubview(label(recent ? "本轮完成后会自动保存到这里" : "已选平台开始执行后，会自动加入列表", size: 11, color: .secondaryLabelColor)) }
+        if rows.isEmpty { stack.addArrangedSubview(label(recent ? "暂无完成记录" : (settings.automaticAgents && detectedAgents.isEmpty ? "等待 Agent 启动" : "等待新的任务"), size: 14)); stack.addArrangedSubview(label(recent ? "本轮完成后会自动保存到这里" : "已选平台开始执行后，会自动加入列表", size: 11, color: .secondaryLabelColor)) }
         stack.layoutSubtreeIfNeeded(); scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, min(origin.y, stack.bounds.height - scroll.contentView.bounds.height)))); scroll.reflectScrolledClipView(scroll.contentView)
     }
     @objc func openToast() { if let url = toastTarget { NSWorkspace.shared.open(url) } else { show() }; toast?.close() }

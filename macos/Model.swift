@@ -35,12 +35,14 @@ struct Settings: Codable {
     var enabled = ["codex": true, "workbuddy": false, "claude": false]
     var sound = false, notifications = true, pinned = true
     var collapsed = Set<String>()
+    var automaticAgents = true
     var immersive = false
     var displayName = "AI Agent 任务监控", setupCompleted = false
-    enum CodingKeys: String, CodingKey { case immersive, enabled, sound, notifications, pinned, collapsed, displayName, setupCompleted }
+    enum CodingKeys: String, CodingKey { case automaticAgents, immersive, enabled, sound, notifications, pinned, collapsed, displayName, setupCompleted }
     init() {}
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        automaticAgents = try c.decodeIfPresent(Bool.self, forKey: .automaticAgents) ?? false
         immersive = try c.decodeIfPresent(Bool.self, forKey: .immersive) ?? false
         enabled = try c.decodeIfPresent([String: Bool].self, forKey: .enabled) ?? enabled
         sound = try c.decodeIfPresent(Bool.self, forKey: .sound) ?? sound
@@ -50,10 +52,10 @@ struct Settings: Codable {
         displayName = try c.decodeIfPresent(String.self, forKey: .displayName) ?? displayName
         setupCompleted = try c.decodeIfPresent(Bool.self, forKey: .setupCompleted) ?? false
     }
-    func configured(name: String, agents: [String: Bool]) -> Settings? {
+    func configured(name: String, agents: [String: Bool], automatic: Bool? = nil) -> Settings? {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, name.count <= 40, name.rangeOfCharacter(from: .controlCharacters) == nil, ["codex", "workbuddy", "claude"].contains(where: { agents[$0] == true }) else { return nil }
-        var result = self; result.displayName = name; result.enabled = Dictionary(uniqueKeysWithValues: ["codex", "workbuddy", "claude"].map { ($0, agents[$0] == true) }); result.setupCompleted = true; return result
+        guard !name.isEmpty, name.count <= 40, name.rangeOfCharacter(from: .controlCharacters) == nil, ((automatic ?? automaticAgents) || ["codex", "workbuddy", "claude"].contains(where: { agents[$0] == true })) else { return nil }
+        var result = self; result.automaticAgents = automatic ?? automaticAgents; result.displayName = name; result.enabled = Dictionary(uniqueKeysWithValues: ["codex", "workbuddy", "claude"].map { ($0, agents[$0] == true) }); result.setupCompleted = true; return result
     }
 }
 
@@ -141,7 +143,7 @@ func claudeEvent(_ o: [String: Any], cli: String, _ s: inout TaskRow) -> Bool {
     s.activity = at; return true
 }
 struct Runtime {
-    var writers = Set<String>(), codex = false, workbuddy = false, claude = false
+    var writers = Set<String>(), codex = false, workbuddy = false, claude = false, claudeDesktopOpen = false
     static func output(_ executable: String, _ args: [String]) -> String {
         let p = Process(), pipe = Pipe(); p.executableURL = URL(fileURLWithPath: executable); p.arguments = args; p.standardOutput = pipe; p.standardError = FileHandle.nullDevice
         do { try p.run(); let bytes = pipe.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit(); return String(decoding: bytes, as: UTF8.self) } catch { return "" }
@@ -158,6 +160,7 @@ struct Runtime {
             if args.contains("/Claude.app/Contents/MacOS/Claude") { desktop.insert(pid) }
             if args.contains("--input-format") && args.contains("stream-json") { workers.append(pid) }
         }
+        result.claudeDesktopOpen = !desktop.isEmpty
         for worker in workers { var pid = worker, seen = Set<Int>(); while let parent = parents[pid], seen.insert(pid).inserted { if desktop.contains(parent) { result.claude = true; break }; pid = parent } }
         // lsof reports descriptors per process; retain writable descriptors only.
         let handles = output("/usr/sbin/lsof", ["-n", "-P", "-Ffan", "-u", NSUserName()])
@@ -169,6 +172,7 @@ struct Runtime {
         }
         return result
     }
+    var detectedPlatforms: Set<String> { Set([codex ? "codex" : nil, workbuddy ? "workbuddy" : nil, (claudeDesktopOpen || claude) ? "claude" : nil].compactMap { $0 }) }
     func hasWriter(_ path: String) -> Bool { let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath().path; return writers.contains(path) || writers.contains(canonical) || writers.contains { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path == canonical } }
     func active(_ platform: String) -> Bool { platform == "codex" ? codex : platform == "workbuddy" ? workbuddy : claude }
 }
@@ -202,6 +206,7 @@ final class Monitor {
     var document: Document, settings: Settings
     var tracks = [String: Track](), health = [String: String](), initialized = Set<String>()
     var notices = [TaskRow](), runtime = Runtime(), now = Date(), bytesRead = 0
+    var previousPlatforms = Set<String>()
     var runtimeAt = Date.distantPast
     var assignments = [String: String](), localProjects = [String: String]()
     var lastDiscovery = Date.distantPast, paths = [URL](), titleStamp = Date.distantPast, titles = [String: String](), projectNames = [String: String]()
@@ -213,7 +218,9 @@ final class Monitor {
         self.transcripts = transcripts ?? URL(fileURLWithPath: env["CLAUDE_CONFIG_DIR"] ?? user.appendingPathComponent(".claude").path)
         for (key, var row) in document.sessions { if ["运行中", "等待输入"].contains(row.state) { row.state = "待确认"; document.sessions[key] = row } }
     }
-    var current: [TaskRow] { document.sessions.values.filter { $0.visible && settings.enabled[$0.platform] == true && !document.dismissed.contains($0.round) }.sorted { ($0.platform, $0.cwd, $0.name, $0.id) < ($1.platform, $1.cwd, $1.name, $1.id) } }
+    var selectedPlatforms: Set<String> { settings.automaticAgents ? runtime.detectedPlatforms : Set(settings.enabled.filter { $0.value }.map { $0.key }) }
+    func enabled(_ platform: String) -> Bool { selectedPlatforms.contains(platform) }
+    var current: [TaskRow] { document.sessions.values.filter { $0.visible && enabled($0.platform) && !document.dismissed.contains($0.round) }.sorted { ($0.platform, $0.cwd, $0.name, $0.id) < ($1.platform, $1.cwd, $1.name, $1.id) } }
     var recent: [TaskRow] { var seen = Set<String>(); return document.history.sorted { ($0.finished ?? .distantPast) > ($1.finished ?? .distantPast) }.filter { seen.insert($0.key).inserted } }
     @discardableResult func saveDocument() -> Bool {
         guard store.save(document.history, "completion-history.json") else { return false }
@@ -252,10 +259,18 @@ final class Monitor {
     }
     func poll(runtime: Runtime? = nil, date: Date = Date()) {
         now = date; notices = []; if let runtime { self.runtime = runtime } else if now.timeIntervalSince(runtimeAt) >= 5 { self.runtime = Runtime.inspect(); runtimeAt = now }
-        if settings.enabled["codex"] == true { pollCodex() }
-        if settings.enabled["workbuddy"] == true { pollWorkBuddy() }
-        if settings.enabled["claude"] == true { pollClaude() }
-        for (key, var row) in document.sessions where settings.enabled[row.platform] == true && ["运行中", "等待输入"].contains(row.state) {
+        let selection = selectedPlatforms
+        for platform in selection.symmetricDifference(previousPlatforms) {
+            initialized.remove(platform); tracks = tracks.filter { $0.value.row.platform != platform }
+            if !selection.contains(platform) { for (key, var row) in document.sessions where row.platform == platform && ["运行中", "等待输入"].contains(row.state) { row.state = "待确认"; document.sessions[key] = row } }
+        }
+        previousPlatforms = selection
+        health = health.filter { selection.contains($0.key) }
+        if settings.automaticAgents && selection.isEmpty { health["automatic"] = "等待本机启动 Codex、WorkBuddy 或 Claude 桌面端" }
+        if enabled("codex") { pollCodex() }
+        if enabled("workbuddy") { pollWorkBuddy() }
+        if enabled("claude") { pollClaude() }
+        for (key, var row) in document.sessions where enabled(row.platform) && ["运行中", "等待输入"].contains(row.state) {
             if !self.runtime.active(row.platform) || !FileManager.default.fileExists(atPath: row.file) { row.state = "待确认"; document.sessions[key] = row }
         }
         persist()
