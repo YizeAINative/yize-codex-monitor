@@ -4,8 +4,44 @@ using System.Text;
 using System.Linq;
 using System.Threading;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 namespace CodexFloat {
     static class Tests {
+        [DllImport("winsqlite3.dll",CallingConvention=CallingConvention.Cdecl)]static extern int sqlite3_open_v2(byte[] filename,out IntPtr db,int flags,IntPtr vfs);
+        [DllImport("winsqlite3.dll",CallingConvention=CallingConvention.Cdecl)]static extern int sqlite3_exec(IntPtr db,byte[] sql,IntPtr callback,IntPtr arg,IntPtr error);
+        [DllImport("winsqlite3.dll",CallingConvention=CallingConvention.Cdecl)]static extern int sqlite3_close(IntPtr db);
+        static void Db(string path,string sql){IntPtr db;int code=sqlite3_open_v2(Encoding.UTF8.GetBytes(path+"\0"),out db,6,IntPtr.Zero);try{if(code!=0)throw new Exception("fixture open "+code);code=sqlite3_exec(db,Encoding.UTF8.GetBytes(sql+"\0"),IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);if(code!=0)throw new Exception("fixture SQL "+code);}finally{sqlite3_close(db);}}
+        static long Stamp(){return (long)(DateTime.UtcNow-new DateTime(1970,1,1,0,0,0,DateTimeKind.Utc)).TotalMilliseconds;}
+        static void WorkBuddyChecks(){
+            string wb=Path.Combine(root,"workbuddy"),db=Path.Combine(wb,"workbuddy.db"),state=Path.Combine(root,"workbuddy-state"),id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";Directory.CreateDirectory(wb);long stamp=Stamp();
+            Db(db,"CREATE TABLE sessions(id TEXT PRIMARY KEY,cwd TEXT,title TEXT,custom_title TEXT,status TEXT,created_at INTEGER,updated_at INTEGER,last_activity_at INTEGER,deleted_at INTEGER); INSERT INTO sessions VALUES('"+id+"','C:\\Projects\\demo','Default title','Custom title','completed',"+stamp+","+stamp+",0,NULL)");
+            Check(WorkBuddySource.State("Planning")=="running"&&WorkBuddySource.State("working")=="running","WorkBuddy planning and working map to spinner");
+            Check(WorkBuddySource.State("pending")=="waiting"&&WorkBuddySource.State("terminated")=="interrupted","WorkBuddy waiting and interruption are distinct");
+            Check(WorkBuddySource.State("error")=="failed"&&WorkBuddySource.State("unexpected")=="unknown","WorkBuddy unknown state never becomes completed");
+            var rows=WorkBuddySource.Read(db);Check(rows.Count==1&&rows[0].Title=="Custom title","native read-only SQLite returns WorkBuddy custom title");
+            bool readOnly=false;try{ReadOnlySqlite.Query(db,"DELETE FROM sessions");}catch(IOException){readOnly=true;}Check(readOnly&&WorkBuddySource.Read(db).Count==1,"SQLite reader rejects writes to source");
+            int alerts=0;using(var e=new WorkBuddyEngine(wb,state)){e.Completed+=items=>alerts+=items.Count;e.Poll();Check(e.Snapshot().Count==0&&alerts==0,"WorkBuddy startup does not replay historic completions");
+                Db(db,"UPDATE sessions SET status='pending',updated_at="+(++stamp));e.Poll();Check(e.Snapshot().Count==0,"unstarted pending draft is not monitored");
+                Db(db,"UPDATE sessions SET status='planning',updated_at="+(++stamp));e.Poll();Check(e.Snapshot().Single().Status=="running","WorkBuddy draft becomes running and autojoins");string turn=e.Snapshot().Single().TurnId;
+                Db(db,"UPDATE sessions SET status='working',updated_at="+(++stamp));e.Poll();Check(e.Snapshot().Single().TurnId==turn,"planning to working preserves same timer");
+                Db(db,"UPDATE sessions SET status='pending',updated_at="+(++stamp));e.Poll();Check(e.Snapshot().Single().Status=="waiting","in-flight permission wait remains visible");
+                Db(db,"UPDATE sessions SET status='working',updated_at="+(++stamp));e.Poll();Check(e.Snapshot().Single().TurnId==turn,"resolving input does not reset round");
+                Db(db,"UPDATE sessions SET status='completed',updated_at="+(++stamp));e.Poll();Check(alerts==1&&e.Snapshot().Single().Status=="completed","WorkBuddy completion turns green and alerts");
+                Db(db,"UPDATE sessions SET custom_title='Renamed',updated_at="+(++stamp));e.Poll();Check(alerts==1&&e.Snapshot().Single().Title=="Renamed","renaming completed task does not repeat alert");
+                Db(db,"UPDATE sessions SET status='planning',updated_at="+(++stamp));e.Poll();Check(e.Snapshot().Single().TurnId!=turn&&e.Snapshot().Single().Status=="running","WorkBuddy follow-up resets round and spinner");
+                Db(db,"UPDATE sessions SET status='terminated',updated_at="+(++stamp));e.Poll();Check(e.Snapshot().Single().Status=="interrupted"&&alerts==1,"WorkBuddy stop does not alert success");
+                Db(db,"UPDATE sessions SET status='working',updated_at="+(++stamp));e.Poll();Db(db,"UPDATE sessions SET status='completed',updated_at="+(++stamp));e.Poll();Check(alerts==2,"WorkBuddy later round alerts again");
+                string previous=e.Snapshot().Single().TurnId;Db(db,"UPDATE sessions SET status='pending',updated_at="+(++stamp));e.Poll();Db(db,"UPDATE sessions SET status='working',updated_at="+(++stamp));e.Poll();Check(e.Snapshot().Single().TurnId!=previous&&e.Snapshot().Single().FinishedAt==DateTime.MinValue,"WorkBuddy completed-pending-running resets completed round");
+                Db(db,"UPDATE sessions SET status='completed',updated_at="+(++stamp));e.Poll();Check(alerts==3,"completion after pending transition not suppressed as duplicate");
+            }
+            using(var e=new WorkBuddyEngine(wb,state)){e.Completed+=items=>alerts+=items.Count;e.Poll();Check(alerts==3&&e.Snapshot().Single().Status=="completed","WorkBuddy restart preserves completed row without duplicate");e.ClearFinished();Check(e.Snapshot().Count==0&&WorkBuddySource.Read(db).Count==1,"WorkBuddy clear affects only widget");}
+            string ch=Path.Combine(root,"hub-codex"),cd=Path.Combine(ch,"sessions","2026","01","01");MakeSession(cd,id,false,"task_started");Db(db,"UPDATE sessions SET status='working',updated_at="+(++stamp));
+            using(var hub=new MonitoringHub(ch,wb,Path.Combine(root,"hub-state"),true,true)){int hubAlerts=0;hub.Completed+=items=>hubAlerts+=items.Count;hub.Poll();Check(hub.Snapshot().Count==2&&hub.Snapshot().Select(s=>s.Key).Distinct().Count()==2,"same session ID across platforms stays separate");hub.Configure(true,false);hub.Poll();Check(hub.Snapshot().Count==1&&hub.Snapshot()[0].Platform=="codex","unchecked WorkBuddy hides its sessions");Db(db,"UPDATE sessions SET status='completed',updated_at="+(++stamp));hub.Poll();Check(hubAlerts==0,"unchecked platform cannot notify");hub.Configure(true,true);hub.Poll();Check(hubAlerts==0,"re-enabling platform does not replay paused notifications");hub.Configure(false,false);hub.Poll();Check(hub.Snapshot().Count==0&&hub.Health.Contains("平台"),"all platforms unchecked gives clear empty state");}
+            Check(WorkBuddySource.DeepLink(id)=="workbuddy://chat/"+id,"WorkBuddy opens correct local chat URI");
+            bool invalid=false;try{WorkBuddySource.DeepLink("id?prompt=bad");}catch(ArgumentException){invalid=true;}Check(invalid,"WorkBuddy rejects unsafe link identifiers");
+            var now=DateTime.UtcNow;var running=new Session{StartedAt=now.AddSeconds(-208),Status="running"};Check(running.RuntimeText(now)=="03:28","running timer displays minutes and seconds");running.StartedAt=now.AddSeconds(-3808);Check(running.RuntimeText(now)=="01:03:28","timer displays total hours");running.Status="completed";running.FinishedAt=now;Check(running.RuntimeText(now.AddHours(4))=="01:03:28","completed timer freezes");running.StartedAt=now.AddSeconds(1);running.FinishedAt=DateTime.MinValue;running.Status="running";Check(running.RuntimeText(now)=="00:00","clock skew cannot show negative timer");
+            Check(Json.Serializer().Deserialize<Settings>("{\"Sound\":false}").MonitorWorkBuddy,"old settings inherit new platform defaults");
+        }
         static int passed; static string root;
         static void Check(bool condition,string name){if(!condition)throw new Exception("FAIL: "+name);passed++;Console.WriteLine("PASS: "+name);}
         static string Event(string kind,string turn){return Json.Serializer().Serialize(new{timestamp=DateTime.UtcNow.ToString("O"),type="event_msg",payload=new{type=kind,turn_id=turn,started_at=DateTime.UtcNow.AddMinutes(-1).ToString("O")}});}
@@ -49,7 +85,7 @@ namespace CodexFloat {
                 Append(repeatFile,Event("task_complete","t3")+"\n");engine.Poll();Check(repeatNotices==3,"third round alerts after restart");
             }
             var partial=Rollout.Identity(p3);Append(p3,"{\"type\":");long offset=Rollout.Hydrate(partial);Check(partial.Status=="completed"&&offset<new FileInfo(p3).Length,"hydration ignores partial trailing JSON");
-            Console.WriteLine("ALL "+passed+" CHECKS PASSED\nFixtures: "+root);return 0;
+            WorkBuddyChecks();Console.WriteLine("ALL "+passed+" CHECKS PASSED\nFixtures: "+root);return 0;
         }catch(Exception ex){Console.Error.WriteLine(ex);return 1;}}
     }
 }

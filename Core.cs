@@ -24,11 +24,20 @@ namespace CodexFloat {
     }
 
     public class Session {
+        public string Platform = "codex";
         public string Id = "", Title = "", Cwd = "", Project = "", FilePath = "", TurnId = "";
         public string Status = "unknown", NotifiedKey = "", DismissedTurn = "";
         public DateTime StartedAt, FinishedAt, LastActivity, FirstSeen;
-        public bool Visible, HasLifecycle, IsChild;
+        public bool Visible, HasLifecycle, IsChild, TimerEstimated;
         public Session Copy() { return (Session)MemberwiseClone(); }
+        public string Key { get { return (Platform ?? "codex") + ":" + Id; } }
+        public string PlatformName { get { return Platform == "workbuddy" ? "WorkBuddy" : "Codex"; } }
+        public string RuntimeText(DateTime now){
+            if(StartedAt==DateTime.MinValue)return "--:--";
+            DateTime end=FinishedAt!=DateTime.MinValue?FinishedAt:(Status=="unknown"&&LastActivity!=DateTime.MinValue?LastActivity:now);
+            var elapsed=end.ToUniversalTime()-StartedAt.ToUniversalTime();if(elapsed<TimeSpan.Zero)elapsed=TimeSpan.Zero;
+            string text=elapsed.TotalHours>=1?((int)elapsed.TotalHours).ToString("00")+":"+elapsed.Minutes.ToString("00")+":"+elapsed.Seconds.ToString("00"):elapsed.Minutes.ToString("00")+":"+elapsed.Seconds.ToString("00");return (TimerEstimated?"≈":"")+text;
+        }
         public string Label { get { return string.IsNullOrWhiteSpace(Title) ? "新对话 · " + (Id.Length >= 8 ? Id.Substring(0,8) : Id) : Title; } }
         public string Group { get { return !string.IsNullOrWhiteSpace(Project) ? Project : (!string.IsNullOrWhiteSpace(Cwd) ? Path.GetFileName(Cwd.TrimEnd('\\','/')) : "未分类对话"); } }
         public bool Terminal { get { return Status == "completed" || Status == "interrupted" || Status == "failed"; } }
@@ -149,6 +158,7 @@ namespace CodexFloat {
     }
 
     public class Settings {
+        public bool MonitorCodex=true, MonitorWorkBuddy=true;
         public bool Sound=true, Notifications=true, AlwaysOnTop=true;
         public double Left=-99999,Top=-99999,Width=400;
     }
