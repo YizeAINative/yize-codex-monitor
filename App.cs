@@ -20,18 +20,20 @@ using Forms = System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("一泽的 AI Agent 任务监控")]
 [assembly: System.Reflection.AssemblyProduct("CodexFloat")]
-[assembly: System.Reflection.AssemblyVersion("1.1.1.0")]
+[assembly: System.Reflection.AssemblyVersion("1.2.0.0")]
 namespace CodexFloat {
     static class Program {
-        public static string DataDir,Home,WorkBuddyHome,CapturePath="",EvidenceDir="";public static bool Demo,DebugTaskbar,PreviewSettings;
+        public static string DataDir,Home,WorkBuddyHome,ClaudeHome,CapturePath="",EvidenceDir="";public static bool Demo,DebugTaskbar,PreviewSettings,RenderOnly;
         static Mutex mutex;static EventWaitHandle showEvent;
         public static string Arg(string[] args,string key,string fallback){int i=Array.IndexOf(args,key);return i>=0&&i+1<args.Length?args[i+1]:fallback;}
         [STAThread] public static int Main(string[] args) {
             Home=Arg(args,"--home",Environment.GetEnvironmentVariable("CODEX_HOME")??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".codex"));
             WorkBuddyHome=Arg(args,"--workbuddy-home",WorkBuddySource.DefaultHome());
+            ClaudeHome=Arg(args,"--claude-home",ClaudeSource.DefaultHome());
             DataDir=Arg(args,"--data-dir",Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CodexFloat"));
             CapturePath=Arg(args,"--capture","");EvidenceDir=Arg(args,"--evidence-dir","");Demo=args.Contains("--demo");DebugTaskbar=args.Contains("--taskbar");PreviewSettings=args.Contains("--preview-settings");Directory.CreateDirectory(DataDir);
-            if(args.Contains("--dump")) { using(var engine=new MonitoringHub(Home,WorkBuddyHome,DataDir,true,true)){engine.Poll();Json.Save(Arg(args,"--output",Path.Combine(DataDir,"snapshot.json")),new {health=engine.Health,sessions=engine.Snapshot()});}return 0; }
+            RenderOnly=args.Contains("--render-preview");if(RenderOnly){Demo=true;var previewApp=new Application();var preview=new MainWindow();preview.RenderPreview(Arg(args,"--render-preview",Path.Combine(DataDir,"preview.png")));return 0;}
+            if(args.Contains("--dump")) { using(var engine=new MonitoringHub(Home,WorkBuddyHome,DataDir,true,true,ClaudeHome,true)){engine.Poll();Json.Save(Arg(args,"--output",Path.Combine(DataDir,"snapshot.json")),new {health=engine.Health,sessions=engine.Snapshot()});}return 0; }
             string instance="Local\\CodexFloat-"+StableHash(Path.GetFullPath(DataDir).ToLowerInvariant());
             bool first;mutex=new Mutex(true,instance,out first);showEvent=new EventWaitHandle(false,EventResetMode.AutoReset,instance+"-show");
             if(!first){showEvent.Set();mutex.Dispose();showEvent.Dispose();return 0;}
@@ -102,7 +104,7 @@ namespace CodexFloat {
         List<Session> latest=new List<Session>();readonly DateTime demoTime=DateTime.UtcNow;
         readonly Dictionary<string,TextBlock> runtimeLabels=new Dictionary<string,TextBlock>();
         public MainWindow(){
-            settings=LoadSettings();engine=new MonitoringHub(Program.Home,Program.WorkBuddyHome,Program.DataDir,settings.MonitorCodex,settings.MonitorWorkBuddy);
+            settings=LoadSettings();engine=new MonitoringHub(Program.Home,Program.WorkBuddyHome,Program.DataDir,settings.MonitorCodex,settings.MonitorWorkBuddy,Program.ClaudeHome,settings.MonitorClaude);
             Title=Program.Demo?"一泽的 AI Agent 样式预览（非实时）":"一泽的 AI Agent 任务监控";FontFamily=new FontFamily("Microsoft YaHei UI, Segoe UI");FontSize=13;
             Width=Math.Max(330,Math.Min(640,settings.Width));SizeToContent=SizeToContent.Height;MinHeight=140;MaxHeight=620;
             WindowStyle=WindowStyle.None;ResizeMode=ResizeMode.NoResize;AllowsTransparency=true;Background=Brushes.Transparent;Topmost=settings.AlwaysOnTop;ShowInTaskbar=Program.DebugTaskbar;
@@ -124,7 +126,7 @@ namespace CodexFloat {
             var clear=Theme.Button("清除完成","仅从悬浮列表移除已结束项",64);clear.FontSize=11;clear.Height=22;clear.Click+=(o,e)=>{engine.ClearFinished();Refresh();};Grid.SetColumn(clear,1);footer.Children.Add(clear);
             var grip=new Thumb{Width=10,Height=12,HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Bottom,Cursor=Cursors.SizeWE,Opacity=.15,Margin=new Thickness(0,0,3,3)};
             grip.DragDelta+=(o,e)=>{Width=Math.Max(330,Math.Min(640,Width+e.HorizontalChange));};grip.DragCompleted+=(o,e)=>SaveSettings();outer.Children.Add(grip);
-            tray=new Forms.NotifyIcon{Icon=System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location),Visible=true,Text="一泽的 AI Agent 任务监控"};
+            tray=new Forms.NotifyIcon{Icon=System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location),Visible=!Program.RenderOnly,Text="一泽的 AI Agent 任务监控"};
             var tm=new Forms.ContextMenuStrip();tm.Items.Add("显示悬浮窗",null,(o,e)=>Dispatcher.BeginInvoke(new Action(ShowWidget)));tm.Items.Add("清除已完成",null,(o,e)=>Dispatcher.BeginInvoke(new Action(()=>{engine.ClearFinished();Refresh();})));tm.Items.Add(new Forms.ToolStripSeparator());tm.Items.Add("退出",null,(o,e)=>Dispatcher.BeginInvoke(new Action(Exit)));tray.ContextMenuStrip=tm;
             tray.DoubleClick+=(o,e)=>Dispatcher.BeginInvoke(new Action(ShowWidget));
             engine.Completed+=items=>Dispatcher.BeginInvoke(new Action(()=>OnCompleted(items)));
@@ -146,20 +148,26 @@ namespace CodexFloat {
         void OpenSettingsMenu(Button button){button.ContextMenu=BuildMenu();button.ContextMenu.PlacementTarget=button;button.ContextMenu.Placement=PlacementMode.Bottom;button.ContextMenu.HorizontalOffset=-192;button.ContextMenu.VerticalOffset=3;
             if(Program.EvidenceDir!="")button.ContextMenu.Opened+=(o,e)=>Dispatcher.BeginInvoke(new Action(()=>{try{var cm=button.ContextMenu;cm.UpdateLayout();var bmp=new RenderTargetBitmap((int)Math.Ceiling(cm.ActualWidth*1.5),(int)Math.Ceiling(cm.ActualHeight*1.5),144,144,PixelFormats.Pbgra32);bmp.Render(cm);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bmp));Directory.CreateDirectory(Program.EvidenceDir);using(var f=File.Create(Path.Combine(Program.EvidenceDir,"settings.png")))encoder.Save(f);}catch(Exception ex){Program.Log("menu-capture",ex);}}),DispatcherPriority.ContextIdle);
             button.ContextMenu.IsOpen=true;}
-        void UpdatePlatforms(){engine.Configure(settings.MonitorCodex,settings.MonitorWorkBuddy);SaveSettings();signature="platform-selection-changed";Refresh();}
-        ContextMenu BuildMenu(){var m=Theme.Menu();m.Items.Add(new MenuItem{Header="监控平台",IsEnabled=false});AddCheck(m,"Codex",settings.MonitorCodex,()=>{settings.MonitorCodex=!settings.MonitorCodex;UpdatePlatforms();});AddCheck(m,"WorkBuddy",settings.MonitorWorkBuddy,()=>{settings.MonitorWorkBuddy=!settings.MonitorWorkBuddy;UpdatePlatforms();});m.Items.Add(new Separator());AddCheck(m,"始终置顶",settings.AlwaysOnTop,()=>ToggleTopmost());AddCheck(m,"完成时播放提示音",settings.Sound,()=>{settings.Sound=!settings.Sound;SaveSettings();});AddCheck(m,"完成时弹出提醒",settings.Notifications,()=>{settings.Notifications=!settings.Notifications;SaveSettings();});m.Items.Add(new Separator());
+        void UpdatePlatforms(){engine.Configure(settings.MonitorCodex,settings.MonitorWorkBuddy,settings.MonitorClaude);SaveSettings();signature="platform-selection-changed";Refresh();}
+        ContextMenu BuildMenu(){var m=Theme.Menu();m.Items.Add(new MenuItem{Header="监控平台",IsEnabled=false});AddCheck(m,"Codex",settings.MonitorCodex,()=>{settings.MonitorCodex=!settings.MonitorCodex;UpdatePlatforms();});AddCheck(m,"WorkBuddy",settings.MonitorWorkBuddy,()=>{settings.MonitorWorkBuddy=!settings.MonitorWorkBuddy;UpdatePlatforms();});AddCheck(m,"Claude Code",settings.MonitorClaude,()=>{settings.MonitorClaude=!settings.MonitorClaude;UpdatePlatforms();});m.Items.Add(new Separator());AddCheck(m,"始终置顶",settings.AlwaysOnTop,()=>ToggleTopmost());AddCheck(m,"完成时播放提示音",settings.Sound,()=>{settings.Sound=!settings.Sound;SaveSettings();});AddCheck(m,"完成时弹出提醒",settings.Notifications,()=>{settings.Notifications=!settings.Notifications;SaveSettings();});m.Items.Add(new Separator());
             var test=new MenuItem{Header="测试完成提醒"};test.Click+=(o,e)=>OnCompleted(new List<Session>{new Session{Title="提醒已开启",Cwd="一泽的 AI Agent 任务监控",Status="completed"}});m.Items.Add(test);
             var reset=new MenuItem{Header="重置窗口位置"};reset.Click+=(o,e)=>{settings.Left=-99999;settings.Top=-99999;PositionWindow();SaveSettings();};m.Items.Add(reset);
             var startup=new MenuItem{Header="开机自动启动",IsCheckable=true,IsChecked=StartupEnabled()};startup.Click+=(o,e)=>SetStartup(startup.IsChecked);m.Items.Add(startup);
-            m.Items.Add(new Separator());var about=new MenuItem{Header="关于 / 使用说明"};about.Click+=(o,e)=>MessageBox.Show(this,"一泽的 AI Agent 任务监控 1.1.1\n\n支持 Codex / WorkBuddy，在菜单中勾选监控平台。\n新一轮开始会自动加入列表。\n绿色代表本轮结束，点击标题打开对应对话。\n中断不会标为完成；状态待确认时不会误报。\n完成项保留到手动清除。\n拖动顶部移动；右下角调整宽度。\n\n仅在本机读取会话元数据，无网络请求。\n配置与监控记录："+Program.DataDir+"\n\n项目：github.com/YizeAINative/yize-codex-monitor\n参考：github.com/LH-03/agent-monitor-hud", "关于一泽的 AI Agent 任务监控");m.Items.Add(about);
+            m.Items.Add(new Separator());var about=new MenuItem{Header="关于 / 使用说明"};about.Click+=(o,e)=>MessageBox.Show(this,"一泽的 AI Agent 任务监控 1.2.0\n\n支持 Codex / WorkBuddy / Claude Code，在菜单中勾选监控平台。\n新一轮开始会自动加入列表。\n绿色代表本轮结束，点击标题打开对应对话。\n中断不会标为完成；状态待确认时不会误报。\n完成项保留到手动清除。\n拖动顶部移动；右下角调整宽度。\n\n仅在本机读取会话元数据，无网络请求。\n配置与监控记录："+Program.DataDir+"\n\n项目：github.com/YizeAINative/yize-codex-monitor\n参考：github.com/LH-03/agent-monitor-hud", "关于一泽的 AI Agent 任务监控");m.Items.Add(about);
             var exit=new MenuItem{Header="退出软件"};exit.Click+=(o,e)=>Exit();m.Items.Add(exit);return m;}
         void AddCheck(ContextMenu m,string name,bool check,Action action){var item=new MenuItem{Header=name,IsCheckable=true,IsChecked=check};item.Click+=(o,e)=>action();m.Items.Add(item);}
         bool StartupEnabled(){using(var key=Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))return key!=null&&key.GetValue("CodexFloat")!=null;}
         void SetStartup(bool enabled){try{using(var key=Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run")){if(enabled)key.SetValue("CodexFloat","\""+System.Reflection.Assembly.GetExecutingAssembly().Location+"\"");else key.DeleteValue("CodexFloat",false);}}catch(Exception ex){MessageBox.Show(this,ex.Message,"无法修改开机启动");}}
         List<Session> DemoSessions(){return new List<Session>{
             new Session{Id="11111111-1111-4111-8111-111111111111",Title="整理项目资料",Cwd=@"C:\Projects\research",Status="running",Visible=true,StartedAt=demoTime.AddMinutes(-8)},
-            new Session{Id="22222222-2222-4222-8222-222222222222",Title="运行构建与测试",Cwd=@"C:\Projects\demo-app",Status="running",Visible=true,StartedAt=demoTime.AddMinutes(-12)},
-            new Session{Id="33333333-3333-4333-8333-333333333333",Title="完成工具配置",Cwd=@"C:\Projects\assistant",Status="completed",Visible=true,StartedAt=demoTime.AddMinutes(-25),FinishedAt=demoTime}};}
+            new Session{Id="22222222-2222-4222-8222-222222222222",Platform="workbuddy",Title="运行构建与测试",Cwd=@"C:\Projects\demo-app",Status="running",Visible=true,StartedAt=demoTime.AddMinutes(-12)},
+            new Session{Id="33333333-3333-4333-8333-333333333333",Platform="claude",Title="完成工具配置",Cwd=@"C:\Projects\assistant",Status="completed",Visible=true,StartedAt=demoTime.AddMinutes(-25),FinishedAt=demoTime}};}
+        public void RenderPreview(string path){
+            latest=DemoSessions();summary.Text="2 个处理中 · 1 个完成";BuildList();var visual=(FrameworkElement)Content;
+            visual.Measure(new Size(Width,double.PositiveInfinity));double height=visual.DesiredSize.Height;visual.Arrange(new Rect(0,0,Width,height));visual.UpdateLayout();
+            var bitmap=new RenderTargetBitmap((int)Math.Ceiling(Width*1.5),(int)Math.Ceiling(height*1.5),144,144,PixelFormats.Pbgra32);bitmap.Render(visual);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));using(var f=File.Create(path))encoder.Save(f);
+            timer.Stop();tray.Dispose();engine.Dispose();
+        }
         void Refresh(){latest=Program.Demo?DemoSessions():engine.Snapshot();string sig=string.Join("|",latest.OrderBy(s=>s.Key).Select(s=>s.Key+"/"+s.Label+"/"+s.Group+"/"+s.Status+"/"+s.StartedAt.Ticks));
             int running=latest.Count(s=>s.Status=="running"),done=latest.Count(s=>s.Status=="completed"),other=latest.Count-running-done;
             summary.Text=latest.Count==0?(Program.Demo?"演示界面":engine.Health):running+" 个处理中"+(done>0?" · "+done+" 个完成":"")+(other>0?" · "+other+" 个待查看":"");summary.ToolTip="开始执行自动加入 · 绿色代表本轮结束";
@@ -169,11 +177,11 @@ namespace CodexFloat {
             if((DateTime.UtcNow-lastStatusExport).TotalSeconds>=5){try{Json.Save(Path.Combine(Program.DataDir,"status.json"),new {updatedAt=DateTime.UtcNow,health=engine.Health,running=running,completed=done,sessions=latest});}catch{}lastStatusExport=DateTime.UtcNow;}
         }
         void BuildList(){double old=scroll.VerticalOffset;list.Children.Clear();runtimeLabels.Clear();
-            if(latest.Count==0){var empty=new StackPanel{Margin=new Thickness(18,27,18,32)};var line=Theme.Text("等待新的任务",14,Theme.Ink);line.HorizontalAlignment=HorizontalAlignment.Center;empty.Children.Add(line);var sub=Theme.Text(settings.MonitorCodex||settings.MonitorWorkBuddy?"已选平台开始执行后，会自动出现在这里":"请在右上角设置中勾选监控平台",11,Theme.Muted);sub.HorizontalAlignment=HorizontalAlignment.Center;sub.Margin=new Thickness(0,10,0,0);empty.Children.Add(sub);list.Children.Add(empty);return;}
+            if(latest.Count==0){var empty=new StackPanel{Margin=new Thickness(18,27,18,32)};var line=Theme.Text("等待新的任务",14,Theme.Ink);line.HorizontalAlignment=HorizontalAlignment.Center;empty.Children.Add(line);var sub=Theme.Text(settings.MonitorCodex||settings.MonitorWorkBuddy||settings.MonitorClaude?"已选平台开始执行后，会自动出现在这里":"请在右上角设置中勾选监控平台",11,Theme.Muted);sub.HorizontalAlignment=HorizontalAlignment.Center;sub.Margin=new Thickness(0,10,0,0);empty.Children.Add(sub);list.Children.Add(empty);return;}
             foreach(var platformGroup in latest.GroupBy(s=>s.Platform??"codex").OrderByDescending(g=>g.Max(s=>s.StartedAt))){
-                bool buddy=platformGroup.Key=="workbuddy";
-                var card=new Border{CornerRadius=new CornerRadius(8),BorderThickness=new Thickness(1),BorderBrush=Theme.B(buddy?"#DEE6EC":"#E0E6DB"),Background=Theme.B(buddy?"#F3F6F9":"#F4F7F0"),Margin=new Thickness(0,3,0,8),Padding=new Thickness(7,8,7,7)};
-                var body=new StackPanel();card.Child=body;var platformTitle=Theme.Text(platformGroup.First().PlatformName,11,Theme.B(buddy?"#6B8193":"#718366"));platformTitle.FontWeight=FontWeights.SemiBold;platformTitle.Margin=new Thickness(8,0,8,2);body.Children.Add(platformTitle);
+                bool buddy=platformGroup.Key=="workbuddy",claude=platformGroup.Key=="claude";
+                var card=new Border{CornerRadius=new CornerRadius(8),BorderThickness=new Thickness(1),BorderBrush=Theme.B(claude?"#EEDFCF":buddy?"#DEE6EC":"#E0E6DB"),Background=Theme.B(claude?"#FCF5ED":buddy?"#F3F6F9":"#F4F7F0"),Margin=new Thickness(0,3,0,8),Padding=new Thickness(7,8,7,7)};
+                var body=new StackPanel();card.Child=body;var platformTitle=Theme.Text(platformGroup.First().PlatformName,11,Theme.B(claude?"#AC8156":buddy?"#6B8193":"#718366"));platformTitle.FontWeight=FontWeights.SemiBold;platformTitle.Margin=new Thickness(8,0,8,2);body.Children.Add(platformTitle);
                 foreach(var group in platformGroup.GroupBy(s=>s.Cwd+"|"+s.Group).OrderByDescending(g=>g.Max(s=>s.StartedAt))){
                     var project=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(8,9,8,4)};project.Children.Add(new FolderMark());var label=Theme.Text(group.First().Group,13,Theme.Ink);label.Margin=new Thickness(8,0,0,0);label.MaxWidth=Width-110;label.ToolTip=group.First().Cwd;project.Children.Add(label);body.Children.Add(project);
                     foreach(var session in group.OrderByDescending(s=>s.StartedAt))body.Children.Add(Row(session));
@@ -185,9 +193,9 @@ namespace CodexFloat {
             System.Windows.Automation.AutomationProperties.SetName(button,session.Label+"，"+StateText(session.Status)+"，打开对话");
             button.ToolTipOpening+=(o,e)=>button.ToolTip=session.Label+"\n"+StateText(session.Status)+" · "+Duration(session)+"\n点击打开对应对话";
             var template=new ControlTemplate(typeof(Button));var presenter=new FrameworkElementFactory(typeof(ContentPresenter));presenter.SetValue(ContentPresenter.HorizontalAlignmentProperty,HorizontalAlignment.Stretch);template.VisualTree=presenter;button.Template=template;
-            bool buddy=session.Platform=="workbuddy";
-            Brush rowRest=session.Status=="completed"?Theme.B(buddy?"#EAF0F6":"#EDF2E6"):Brushes.Transparent;
-            Brush rowHover=Theme.B(buddy?"#E2EAF3":"#E6EDDD");
+            bool buddy=session.Platform=="workbuddy",claude=session.Platform=="claude";
+            Brush rowRest=session.Status=="completed"?Theme.B(claude?"#F8EBDB":buddy?"#EAF0F6":"#EDF2E6"):Brushes.Transparent;
+            Brush rowHover=Theme.B(claude?"#F2E2CE":buddy?"#E2EAF3":"#E6EDDD");
             var border=new Border{CornerRadius=new CornerRadius(6),Background=rowRest,Padding=new Thickness(34,9,10,9)};button.Content=border;
             var row=new Grid();row.ColumnDefinitions.Add(new ColumnDefinition());row.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});border.Child=row;
             var title=Theme.Text(session.Label,13,Theme.B("#62665F"));title.Margin=new Thickness(0,0,10,0);row.Children.Add(title);
@@ -200,7 +208,7 @@ namespace CodexFloat {
         }
         static string StateText(string state){return state=="running"?"处理中":state=="completed"?"本轮已完成":state=="interrupted"?"已中断":state=="failed"?"执行失败":state=="waiting"?"等待输入":"状态待确认";}
         static string Duration(Session s){if(s.StartedAt==DateTime.MinValue)return "";var span=(s.FinishedAt==DateTime.MinValue?DateTime.UtcNow:s.FinishedAt)-s.StartedAt;return span.TotalHours>=1?((int)span.TotalHours)+" 小时 "+span.Minutes+" 分钟":Math.Max(0,(int)span.TotalMinutes)+" 分钟";}
-        public void OpenSession(Session session){if(Program.Demo||string.IsNullOrEmpty(session.Id))return;try{string uri=session.Platform=="workbuddy"?WorkBuddySource.DeepLink(session.Id):Rollout.DeepLink(session.Id);Process.Start(new ProcessStartInfo(uri){UseShellExecute=true});Json.Save(Path.Combine(Program.DataDir,"last-open.json"),new{platform=session.Platform,threadId=session.Id,uri=uri,openedAt=DateTime.UtcNow});}catch(Exception ex){MessageBox.Show(this,"无法打开 "+session.PlatformName+" 对话，请确认桌面版已安装。\n\n"+ex.Message,"打开对话");}}
+        public void OpenSession(Session session){if(Program.Demo||string.IsNullOrEmpty(session.Id))return;try{string uri;if(session.Platform=="claude"){uri="claude "+ClaudeSource.ResumeArguments(session.Id);Process.Start(ClaudeSource.ResumeStartInfo(session));}else{uri=session.Platform=="workbuddy"?WorkBuddySource.DeepLink(session.Id):Rollout.DeepLink(session.Id);Process.Start(new ProcessStartInfo(uri){UseShellExecute=true});}Json.Save(Path.Combine(Program.DataDir,"last-open.json"),new{platform=session.Platform,threadId=session.Id,uri=uri,openedAt=DateTime.UtcNow});}catch(Exception ex){MessageBox.Show(this,"无法打开 "+session.PlatformName+" 对话。\n\n"+ex.Message,"打开对话");}}
         void OnCompleted(List<Session> items){Refresh();items=items.Where(s=>s.Id==""||latest.Any(current=>current.Key==s.Key&&current.TurnId==s.TurnId&&current.Status=="completed")).ToList();if(items.Count==0)return;if(settings.Sound)Task.Run(()=>System.Media.SystemSounds.Asterisk.Play());if(!settings.Notifications)return;
             if(toast!=null){toast.Close();toast=null;}toast=new ToastWindow(items,OpenSession);toast.Show();try{Json.Save(Path.Combine(Program.DataDir,"last-notification.json"),new{at=DateTime.UtcNow,sound=settings.Sound,sessions=items.Select(s=>new{id=s.Id,turnId=s.TurnId,title=s.Label}).ToArray()});}catch{}}
         void Capture(string path){try{UpdateLayout();var bmp=new RenderTargetBitmap((int)Math.Ceiling(ActualWidth*1.5),(int)Math.Ceiling(ActualHeight*1.5),144,144,PixelFormats.Pbgra32);bmp.Render(this);var enc=new PngBitmapEncoder();enc.Frames.Add(BitmapFrame.Create(bmp));Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));using(var f=File.Create(path))enc.Save(f);}catch(Exception ex){Program.Log("capture",ex);}}

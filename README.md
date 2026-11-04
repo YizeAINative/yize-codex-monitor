@@ -1,8 +1,12 @@
 # 一泽的 AI Agent 任务监控
 
-独立的 Windows 悬浮小软件。支持 **Codex / WorkBuddy**，可勾选监控平台；以项目分组展示当前对话，开始执行自动加入，运行中转圈并实时计时，本轮完成变绿并提醒，点击标题打开对应平台的对话。
+独立的 Windows 悬浮小软件。支持 **Codex / WorkBuddy / Claude Code**，可勾选监控平台；以项目分组展示当前对话，开始执行自动加入，运行中转圈并实时计时，本轮完成变绿并提醒，点击标题打开对应平台的对话。
 
 不同平台使用独立的浅色圆角分区，平台名只在区域左上角显示一次；区域内保留简洁的项目与对话列表。
+
+Codex 使用浅绿色，WorkBuddy 使用浅蓝色，Claude Code 使用浅橙色。任务行与悬停底色保持所属平台的色系，绿色完成标记保留。
+
+![界面示意，使用固定示例数据](docs/platform-preview.png)
 
 ## 使用
 
@@ -14,9 +18,9 @@
 - **继续提问**：同一个对话自动回到转圈，下一轮完成再次提醒。
 - **已中断**：明确显示中断，不发送完成提醒。
 - **待确认**：缺少明确结束事件且无法确认仍有写入进程，不误标完成。
-- **点击标题**：根据平台，通过 `codex://threads/{id}` 或 `workbuddy://chat/{id}` 打开对应对话。
+- **点击标题**：Codex / WorkBuddy 通过应用链接打开对应对话；Claude Code 在该会话的工作目录打开终端，执行 `claude --resume <会话 ID>`，不附带新提示词。
 - **拖动顶部**：移动窗口；右下角可调整宽度。
-- **右上角三个点**：勾选 Codex / WorkBuddy，以及置顶、声音、弹出提醒、测试提醒、重置位置、开机启动、退出。取消平台勾选后停止该平台读取、隐藏其条目并停止提醒；重新勾选不补播暂停期间的完成通知。
+- **右上角三个点**：勾选 Codex / WorkBuddy / Claude Code，以及置顶、声音、弹出提醒、测试提醒、重置位置、开机启动、退出。取消平台勾选后停止该平台读取、隐藏其条目并停止提醒；重新勾选不补播暂停期间的完成通知。
 - **右上角减号**：收起到系统托盘。双击托盘图标或再次启动 EXE 即可找回。
 - **清除完成**：只清除悬浮列表中已结束的行，不删除 Codex 的聊天或文件。
 
@@ -30,6 +34,8 @@ WorkBuddy 自动发现 `%USERPROFILE%\.workbuddy-ai\workbuddy.db` 或 `%USERPROF
 
 WorkBuddy 的 `planning` / `working` 显示转圈，`pending` 显示等待输入，`completed` 变绿，`terminated` 显示中断，`error` / `failed` 显示失败。初次运行不列出所有历史完成任务。若首次接入时 WorkBuddy 任务已经在执行，只能从最近的状态时间估计起点，计时前显示 `≈`；之后观察到的新轮次正常重新计时。
 
+Claude Code 读取 `%USERPROFILE%\.claude\projects`，支持 `CLAUDE_CONFIG_DIR` 和 `--claude-home`。根据本地 JSONL 中的用户输入、工具结果、`stop_reason=end_turn`、中断标记与 API 错误字段更新状态；内部子代理不单独列出，单纯的 `turn_duration` 不视作成功。自定义会话标题优先，没有标题时显示会话 ID 的简写。读取过程不保存消息正文、不修改 Claude 配置。其格式已与本机 Claude Code 2.1.68 的记录核对。云端、关闭会话持久化的任务以及未落地到此目录的记录不在此适配器范围内。
+
 程序仅在本机工作，没有网络请求，不调用模型，不读取登录凭据，不修改 Codex 配置和会话文件。读取来源为：
 
 - `sessions/**/*.jsonl` 的会话身份和生命周期事件；通过目录监听和增量读取更新状态。
@@ -42,11 +48,11 @@ WorkBuddy 的 `planning` / `working` 显示转圈，`pending` 显示等待输入
 
 “开机自动启动”仅在用户勾选时设置当前用户的 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\CodexFloat`。关闭该选项即可取消。便携版启用后请保持 EXE 路径稳定。
 
-本工具当前针对本地 Codex / WorkBuddy 会话。云端或其他电脑未落地到本机的会话不在监控范围。若平台后续改变本地日志或数据库格式，可能需要更新读取逻辑。无法明确识别的状态保持“待确认”。Claude Code 尚未接入。
+本工具当前针对本地 Codex / WorkBuddy / Claude Code 会话。云端或其他电脑未落地到本机的会话不在监控范围。若平台后续改变本地日志或数据库格式，可能需要更新读取逻辑。无法明确识别的状态保持“待确认”。
 
 ## 构建与验证
 
-源文件：`Core.cs`（Codex 生命周期、增量读取、目录监听、持久化和计时），`WorkBuddy.cs`（WorkBuddy 只读 SQLite 适配器、状态机及平台监控调度），`App.cs`（WPF 悬浮窗、统一风格菜单、托盘、提醒及对话跳转）。
+源文件：`Core.cs`（Codex 生命周期、增量读取、目录监听、持久化和计时），`WorkBuddy.cs`（WorkBuddy 只读 SQLite 适配器、状态机及平台监控调度），`Claude.cs`（Claude Code 会话读取、状态机和终端恢复），`App.cs`（WPF 悬浮窗、统一风格菜单、托盘、提醒及对话跳转）。
 
 ```powershell
 .\build.ps1
@@ -55,7 +61,7 @@ WorkBuddy 的 `planning` / `working` 显示转圈，`pending` 显示等待输入
 
 使用本机 .NET Framework 编译器，无 NuGet 或 npm 依赖。`CoreTests.exe` 在独立临时目录运行，不修改真实 Codex 数据。
 
-已通过 65 项检查，包括 Codex 多轮状态循环、重启恢复、提醒去重、旧日期目录发现、部分 JSON / UTF-8 写入、截断恢复、子代理过滤，以及 WorkBuddy 原生 SQLite 只读约束、状态循环、等待输入、同 ID 跨平台隔离、平台开关与计时冻结。另用隔离记录验证了完成变绿和提醒浮窗的实际渲染；真实 Codex 状态与对话列表进行了对照，WorkBuddy 的真实本地数据库已只读验证。WorkBuddy 状态切换测试使用隔离数据库，不修改用户会话。
+已通过 93 项检查，包括 Codex 多轮状态循环、重启恢复、提醒去重、旧日期目录发现、部分 JSON / UTF-8 写入、截断恢复、子代理过滤，以及 WorkBuddy 原生 SQLite 只读约束、状态循环、等待输入、同 ID 跨平台隔离、平台开关与计时冻结。Claude Code 增加了工具结果与用户输入区分、结束与中断区分、错误识别、标题优先级、多轮提醒、子代理过滤、重启与平台开关检查。状态切换测试使用隔离数据库或 JSONL，不修改用户会话；真实 Codex / WorkBuddy 运行状态和 Claude 本地记录结构已核对。
 
 开发诊断参数：
 
@@ -73,4 +79,4 @@ WorkBuddy 的 `planning` / `working` 显示转圈，`pending` 显示等待输入
 
 状态采集思路与对话链接格式参考 [Agent Monitor HUD](https://github.com/LH-03/agent-monitor-hud) 及其[架构说明](https://github.com/LH-03/agent-monitor-hud/blob/main/docs/ARCHITECTURE.md)。本程序独立实现简洁列表与状态机，未依赖或安装该项目。本地研究资料、真实会话数据和测试运行记录不包含在本仓库内。
 
-非官方工具，与 OpenAI、腾讯无关联。
+非官方工具，与 OpenAI、腾讯、Anthropic 无关联。

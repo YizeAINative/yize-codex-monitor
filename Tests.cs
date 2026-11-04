@@ -12,6 +12,33 @@ namespace CodexFloat {
         [DllImport("winsqlite3.dll",CallingConvention=CallingConvention.Cdecl)]static extern int sqlite3_close(IntPtr db);
         static void Db(string path,string sql){IntPtr db;int code=sqlite3_open_v2(Encoding.UTF8.GetBytes(path+"\0"),out db,6,IntPtr.Zero);try{if(code!=0)throw new Exception("fixture open "+code);code=sqlite3_exec(db,Encoding.UTF8.GetBytes(sql+"\0"),IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);if(code!=0)throw new Exception("fixture SQL "+code);}finally{sqlite3_close(db);}}
         static long Stamp(){return (long)(DateTime.UtcNow-new DateTime(1970,1,1,0,0,0,DateTimeKind.Utc)).TotalMilliseconds;}
+        static string CcLine(string id,string type,string uuid,object message,bool side=false,string subtype="",bool meta=false,bool error=false){return Json.Serializer().Serialize(new{sessionId=id,type=type,uuid=uuid,cwd=@"C:\Projects\fixture",timestamp=DateTime.UtcNow.ToString("O"),isSidechain=side,isMeta=meta,isApiErrorMessage=error,subtype=subtype,message=message})+"\n";}
+        static void ClaudeChecks(){
+            string id="cccccccc-cccc-4ccc-8ccc-cccccccccccc";var s=new Session{Id=id,Platform="claude"};
+            Func<string,string> user=turn=>CcLine(id,"user",turn,new{role="user",content="Fixture input"});
+            Func<string> end=()=>CcLine(id,"assistant","a-final",new{role="assistant",content=new object[0],stop_reason="end_turn"});
+            ClaudeSource.Apply(user("turn1"),s);Check(s.Status=="running"&&s.Visible,"Claude human prompt begins a timed round");DateTime started=s.StartedAt;
+            ClaudeSource.Apply(CcLine(id,"assistant","a1",new{role="assistant",content=new[]{new{type="thinking",thinking="fixture"}},stop_reason=(string)null}),s);Check(s.Status=="running","Claude thinking is not completion");
+            ClaudeSource.Apply(CcLine(id,"user","result",new{role="user",content=new[]{new{type="tool_result",tool_use_id="tool1",content="fixture"}}}),s);Check(s.StartedAt==started&&s.TurnId=="turn1","Claude tool result does not reset timer");
+            ClaudeSource.Apply(CcLine(id,"assistant","ask",new{role="assistant",content=new[]{new{type="tool_use",name="AskUserQuestion"}},stop_reason="tool_use"}),s);Check(s.Status=="waiting","Claude question shows waiting");
+            ClaudeSource.Apply(CcLine(id,"user","answer",new{role="user",content=new[]{new{type="tool_result",tool_use_id="question",content="fixture"}}}),s);Check(s.Status=="running"&&s.StartedAt==started,"Claude answered question continues same round");
+            ClaudeSource.Apply(CcLine(id,"assistant","child",new{role="assistant",stop_reason="end_turn"},true),s);Check(s.Status=="running","Claude child completion cannot finish root");
+            ClaudeSource.Apply(end(),s);Check(s.Status=="completed","Claude end_turn marks completed");string frozen=s.RuntimeText(DateTime.UtcNow);Check(s.RuntimeText(DateTime.UtcNow.AddHours(1))==frozen,"Claude completed timer freezes");
+            ClaudeSource.Apply(user("turn2"),s);Check(s.Status=="running"&&s.TurnId=="turn2"&&s.StartedAt>=started,"Claude follow-up resets round");
+            ClaudeSource.Apply(CcLine(id,"user","cancel",new{role="user",content="[Request interrupted by user]"},false,"",true),s);ClaudeSource.Apply(CcLine(id,"system","duration",null,false,"turn_duration"),s);Check(s.Status=="interrupted","Claude interrupt and duration never turn green");
+            ClaudeSource.Apply(user("turn3"),s);ClaudeSource.Apply(CcLine(id,"assistant","err",new{role="assistant",stop_reason=(string)null},false,"",false,true),s);Check(s.Status=="failed","Claude API error is failure");
+            ClaudeSource.Apply(Json.Serializer().Serialize(new{type="custom-title",sessionId=id,customTitle="My named session"}),s);ClaudeSource.Apply(Json.Serializer().Serialize(new{type="summary",sessionId=id,summary="Auto summary"}),s);Check(s.Title=="My named session","Claude custom name overrides automatic summary");
+            Check(ClaudeSource.ResumeArguments(id)=="--resume "+id,"Claude resumes exact session without submitting prompt");bool invalid=false;try{ClaudeSource.ResumeArguments("foo; echo bad");}catch(ArgumentException){invalid=true;}Check(invalid,"Claude resume rejects non-GUID input");
+            string home=Path.Combine(root,"claude"),dir=Path.Combine(home,"projects","C--fixture"),state=Path.Combine(root,"claude-state");Directory.CreateDirectory(dir);string file=Path.Combine(dir,id+".jsonl");File.WriteAllText(file,user("old")+end(),new UTF8Encoding(false));
+            int alerts=0;using(var e=new ClaudeEngine(home,state,()=>true)){e.Completed+=items=>alerts+=items.Count;e.Poll();Check(e.Snapshot().Count==0&&alerts==0,"Claude history does not flood initial list");
+                Append(file,user("round-1"));e.Poll();Check(e.Snapshot().Single().Status=="running","Claude resumed file automatically joins");Append(file,end());e.Poll();Check(e.Snapshot().Single().Status=="completed"&&alerts==1,"Claude completion emits one alert");
+                Append(file,end());e.Poll();Check(alerts==1,"Claude repeated terminal message is deduplicated");Append(file,user("round-2"));e.Poll();Check(e.Snapshot().Single().Status=="running","Claude completed row resumes spinner");Append(file,end());e.Poll();Check(alerts==2,"Claude next round alerts again");e.ClearFinished();Check(e.Snapshot().Count==0&&File.Exists(file),"Claude clear does not delete transcript");
+                string childDir=Path.Combine(dir,id,"subagents");Directory.CreateDirectory(childDir);File.WriteAllText(Path.Combine(childDir,"dddddddd-dddd-4ddd-8ddd-dddddddddddd.jsonl"),user("child"));Thread.Sleep(100);e.Poll();Check(e.Snapshot().Count==0,"Claude nested subagent file is excluded");}
+            using(var e=new ClaudeEngine(home,state,()=>true)){e.Completed+=items=>alerts+=items.Count;e.Poll();Check(e.Snapshot().Count==0&&alerts==2,"Claude dismissal and alert keys survive restart");Append(file,user("round-3"));e.Poll();Append(file,end());e.Poll();Check(alerts==3,"Claude resumed after restart alerts normally");}
+            string emptyCodex=Path.Combine(root,"empty-codex"),emptyWb=Path.Combine(root,"empty-wb");
+            using(var hub=new MonitoringHub(emptyCodex,emptyWb,Path.Combine(root,"claude-hub"),false,false,home,true)){int notifications=0;hub.Completed+=items=>notifications+=items.Count;hub.Poll();Append(file,user("hub-round"));hub.Poll();Check(hub.Snapshot().Count==1&&hub.Snapshot()[0].Platform=="claude","Claude can be the only selected platform");hub.Configure(false,false,false);Append(file,end());hub.Poll();Check(hub.Snapshot().Count==0&&notifications==0,"unchecked Claude stops showing and notifying");hub.Configure(false,false,true);hub.Poll();Append(file,CcLine(id,"system","duration-2",null,false,"turn_duration"));hub.Poll();Check(notifications==0,"Claude re-enable does not replay paused completion");}
+            Check(Json.Serializer().Deserialize<Settings>("{\"MonitorCodex\":true}").MonitorClaude,"existing settings enable new Claude option");
+        }
         static void WorkBuddyChecks(){
             string wb=Path.Combine(root,"workbuddy"),db=Path.Combine(wb,"workbuddy.db"),state=Path.Combine(root,"workbuddy-state"),id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";Directory.CreateDirectory(wb);long stamp=Stamp();
             Db(db,"CREATE TABLE sessions(id TEXT PRIMARY KEY,cwd TEXT,title TEXT,custom_title TEXT,status TEXT,created_at INTEGER,updated_at INTEGER,last_activity_at INTEGER,deleted_at INTEGER); INSERT INTO sessions VALUES('"+id+"','C:\\Projects\\demo','Default title','Custom title','completed',"+stamp+","+stamp+",0,NULL)");
@@ -85,7 +112,7 @@ namespace CodexFloat {
                 Append(repeatFile,Event("task_complete","t3")+"\n");engine.Poll();Check(repeatNotices==3,"third round alerts after restart");
             }
             var partial=Rollout.Identity(p3);Append(p3,"{\"type\":");long offset=Rollout.Hydrate(partial);Check(partial.Status=="completed"&&offset<new FileInfo(p3).Length,"hydration ignores partial trailing JSON");
-            WorkBuddyChecks();Console.WriteLine("ALL "+passed+" CHECKS PASSED\nFixtures: "+root);return 0;
+            WorkBuddyChecks();ClaudeChecks();Console.WriteLine("ALL "+passed+" CHECKS PASSED\nFixtures: "+root);return 0;
         }catch(Exception ex){Console.Error.WriteLine(ex);return 1;}}
     }
 }

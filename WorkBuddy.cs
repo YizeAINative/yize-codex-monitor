@@ -124,20 +124,21 @@ namespace CodexFloat {
         public void Dispose(){lock(gate)Save();}
     }
     public class MonitoringHub:IDisposable {
-        readonly object gate=new object();readonly string codexHome,workbuddyHome,dataDir;
-        Engine codex;WorkBuddyEngine workbuddy;bool enableCodex,enableWorkBuddy;
+        readonly object gate=new object();readonly string codexHome,workbuddyHome,claudeHome,dataDir;
+        Engine codex;WorkBuddyEngine workbuddy;ClaudeEngine claude;bool enableCodex,enableWorkBuddy,enableClaude;
         public event Action<List<Session>> Completed;
-        public MonitoringHub(string ch,string wh,string data,bool c,bool w){codexHome=ch;workbuddyHome=wh;dataDir=data;enableCodex=c;enableWorkBuddy=w;}
-        public void Configure(bool c,bool w){lock(gate){enableCodex=c;enableWorkBuddy=w;if(!c&&codex!=null){codex.Dispose();codex=null;}if(!w&&workbuddy!=null){workbuddy.Dispose();workbuddy=null;}}}
-        public string Health { get {lock(gate){if(!enableCodex&&!enableWorkBuddy)return "请在设置里勾选监控平台";if(enableCodex&&enableWorkBuddy)return "Codex / WorkBuddy 自动监控";return enableCodex?(codex==null?"正在连接 Codex…":codex.Health):(workbuddy==null?"正在连接 WorkBuddy…":workbuddy.Health);}} }
+        public MonitoringHub(string ch,string wh,string data,bool c,bool w,string cl=null,bool cc=false){codexHome=ch;workbuddyHome=wh;claudeHome=cl??ClaudeSource.DefaultHome();dataDir=data;enableCodex=c;enableWorkBuddy=w;enableClaude=cc;}
+        public void Configure(bool c,bool w,bool cc=false){lock(gate){enableCodex=c;enableWorkBuddy=w;enableClaude=cc;if(!c&&codex!=null){codex.Dispose();codex=null;}if(!w&&workbuddy!=null){workbuddy.Dispose();workbuddy=null;}if(!cc&&claude!=null){claude.Dispose();claude=null;}}}
+        public string Health { get {lock(gate){var names=new List<string>();if(enableCodex)names.Add("Codex");if(enableWorkBuddy)names.Add("WorkBuddy");if(enableClaude)names.Add("Claude Code");if(names.Count==0)return "请在设置里勾选监控平台";if(names.Count>1)return string.Join(" / ",names)+" 自动监控";if(enableCodex)return codex==null?"正在连接 Codex…":codex.Health;if(enableWorkBuddy)return workbuddy==null?"正在连接 WorkBuddy…":workbuddy.Health;return claude==null?"正在连接 Claude Code…":claude.Health;}} }
         public void Poll(){lock(gate){
             if(enableCodex){if(codex==null){codex=new Engine(codexHome,dataDir);codex.Poll();codex.Completed+=Forward;}else codex.Poll();}
             if(enableWorkBuddy){if(workbuddy==null){workbuddy=new WorkBuddyEngine(workbuddyHome,dataDir);workbuddy.Poll();workbuddy.Completed+=Forward;}else workbuddy.Poll();}
+            if(enableClaude){if(claude==null){claude=new ClaudeEngine(claudeHome,dataDir);claude.Poll();claude.Completed+=Forward;}else claude.Poll();}
         }}
         void Forward(List<Session> items){if(Completed!=null)Completed(items);}
-        public List<Session> Snapshot(){lock(gate){var list=new List<Session>();if(enableCodex&&codex!=null)list.AddRange(codex.Snapshot());if(enableWorkBuddy&&workbuddy!=null)list.AddRange(workbuddy.Snapshot());return list;}}
-        public void ClearFinished(){lock(gate){if(enableCodex&&codex!=null)codex.ClearFinished();if(enableWorkBuddy&&workbuddy!=null)workbuddy.ClearFinished();}}
-        public void Dismiss(Session s){lock(gate){if(s.Platform=="workbuddy"){if(workbuddy!=null)workbuddy.Dismiss(s.Id);}else if(codex!=null)codex.Dismiss(s.Id);}}
-        public void Dispose(){lock(gate){if(codex!=null)codex.Dispose();if(workbuddy!=null)workbuddy.Dispose();}}
+        public List<Session> Snapshot(){lock(gate){var list=new List<Session>();if(enableCodex&&codex!=null)list.AddRange(codex.Snapshot());if(enableWorkBuddy&&workbuddy!=null)list.AddRange(workbuddy.Snapshot());if(enableClaude&&claude!=null)list.AddRange(claude.Snapshot());return list;}}
+        public void ClearFinished(){lock(gate){if(enableCodex&&codex!=null)codex.ClearFinished();if(enableWorkBuddy&&workbuddy!=null)workbuddy.ClearFinished();if(enableClaude&&claude!=null)claude.ClearFinished();}}
+        public void Dismiss(Session s){lock(gate){if(s.Platform=="claude"){if(claude!=null)claude.Dismiss(s.Id);}else if(s.Platform=="workbuddy"){if(workbuddy!=null)workbuddy.Dismiss(s.Id);}else if(codex!=null)codex.Dismiss(s.Id);}}
+        public void Dispose(){lock(gate){if(codex!=null)codex.Dispose();if(workbuddy!=null)workbuddy.Dispose();if(claude!=null)claude.Dispose();}}
     }
 }
