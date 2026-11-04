@@ -29,10 +29,29 @@ func elapsed(_ row: TaskRow, now: Date = Date()) -> String {
     return (row.estimated ? "≈" : "") + (seconds >= 3600 ? String(format: "%02d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60) : String(format: "%02d:%02d", seconds / 60, seconds % 60))
 }
 struct Settings: Codable {
-    var enabled = ["codex": true, "workbuddy": true, "claude": true]
+    var enabled = ["codex": true, "workbuddy": false, "claude": false]
     var sound = false, notifications = true, pinned = true
     var collapsed = Set<String>()
+    var displayName = "AI Agent 任务监控", setupCompleted = false
+    enum CodingKeys: String, CodingKey { case enabled, sound, notifications, pinned, collapsed, displayName, setupCompleted }
+    init() {}
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decodeIfPresent([String: Bool].self, forKey: .enabled) ?? enabled
+        sound = try c.decodeIfPresent(Bool.self, forKey: .sound) ?? sound
+        notifications = try c.decodeIfPresent(Bool.self, forKey: .notifications) ?? notifications
+        pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? pinned
+        collapsed = try c.decodeIfPresent(Set<String>.self, forKey: .collapsed) ?? collapsed
+        displayName = try c.decodeIfPresent(String.self, forKey: .displayName) ?? displayName
+        setupCompleted = try c.decodeIfPresent(Bool.self, forKey: .setupCompleted) ?? false
+    }
+    func configured(name: String, agents: [String: Bool]) -> Settings? {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name.count <= 40, name.rangeOfCharacter(from: .controlCharacters) == nil, ["codex", "workbuddy", "claude"].contains(where: { agents[$0] == true }) else { return nil }
+        var result = self; result.displayName = name; result.enabled = Dictionary(uniqueKeysWithValues: ["codex", "workbuddy", "claude"].map { ($0, agents[$0] == true) }); result.setupCompleted = true; return result
+    }
 }
+
 struct Document: Codable {
     var version = 1
     var sessions = [String: TaskRow]()

@@ -24,7 +24,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Preserve the user's earlier explicit sound preference, including the default silence.
         if monitor.store.load("settings.json", as: Settings.self) == nil { settings.sound = UserDefaults.standard.bool(forKey: "completionSoundEnabled"); monitor.settings = settings }
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 590), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
-        window.title = "一泽的 AI Agent 任务监控"; window.delegate = self; window.isReleasedWhenClosed = false; window.minSize = NSSize(width: 400, height: 280)
+        window.title = settings.displayName; window.delegate = self; window.isReleasedWhenClosed = false; window.minSize = NSSize(width: 400, height: 280)
         window.appearance = NSAppearance(named: .aqua); window.backgroundColor = NSColor(calibratedRed: 0.966, green: 0.975, blue: 0.953, alpha: 1)
         window.level = settings.pinned ? .floating : .normal; window.setFrameAutosaveName("MonitorWindowV2"); if !window.setFrameUsingName("MonitorWindowV2") { window.center() }
         let root = window.contentView!
@@ -34,11 +34,12 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
         footer = label("正在检查本地任务…", size: 10, color: .secondaryLabelColor); footer.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(footer)
         let clear = NSButton(title: "清除完成", target: self, action: #selector(clearCompleted)); clear.bezelStyle = .inline; clear.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(clear)
         NSLayoutConstraint.activate([tabs.topAnchor.constraint(equalTo: root.topAnchor, constant: 12), tabs.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12), tabs.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12), tabs.heightAnchor.constraint(equalToConstant: 30), scroll.topAnchor.constraint(equalTo: tabs.bottomAnchor, constant: 10), scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 8), scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -8), scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -38), stack.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor), footer.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16), footer.trailingAnchor.constraint(lessThanOrEqualTo: clear.leadingAnchor, constant: -8), footer.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -12), clear.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14), clear.centerYAnchor.constraint(equalTo: footer.centerYAnchor)])
-        status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength); status.button?.title = "◉ AI"; buildMenu()
+        status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength); status.button?.title = "◉ AI"; status.button?.toolTip = settings.displayName; buildMenu()
         current = monitor.current; history = monitor.recent; render(); poll()
         timer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in self?.poll() }
         clockTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in guard let self else { return }; for (field, row) in self.labels { field.stringValue = elapsed(row) } }
         show()
+        if !settings.setupCompleted { configureApp() }
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); return false }
     @objc func show() { window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
@@ -46,11 +47,38 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func buildMenu() {
         menu = NSMenu()
         func add(_ title: String, _ action: Selector, _ check: Bool? = nil, tag: Int = 0) { let i = menu.addItem(withTitle: title, action: action, keyEquivalent: ""); i.target = self; i.tag = tag; if let check { i.state = check ? .on : .off } }
-        add("显示监控", #selector(show)); menu.addItem(.separator())
+        add("显示 " + settings.displayName, #selector(show)); add("名称与监控设置…", #selector(configureApp)); menu.addItem(.separator())
         for (i, p) in ["Codex", "WorkBuddy", "Claude 桌面端 Code"].enumerated() { add(p, #selector(togglePlatform(_:)), settings.enabled[["codex", "workbuddy", "claude"][i]] == true, tag: i) }
         menu.addItem(.separator()); add("始终置顶", #selector(togglePin), settings.pinned); add("完成提示音", #selector(toggleSound), settings.sound); add("完成时弹出提醒", #selector(toggleNotifications), settings.notifications)
         add("测试完成提醒", #selector(testNotification)); add("重置窗口位置", #selector(resetPosition)); add("登录时自动启动", #selector(toggleStartup), SMAppService.mainApp.status == .enabled)
         menu.addItem(.separator()); add("诊断与使用说明", #selector(about)); add("退出", #selector(quit)); status.menu = menu
+    }
+    @objc func configureApp() {
+        let initial = !settings.setupCompleted
+        let alert = NSAlert(); alert.messageText = initial ? "设置你的任务监控" : "名称与监控设置"
+        alert.informativeText = "设置窗口和提醒中显示的名称，再选择要监控的 Agent。之后可以从菜单栏修改。"
+        alert.addButton(withTitle: initial ? "开始监控" : "保存设置"); alert.addButton(withTitle: initial ? "退出" : "取消")
+        let form = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 230))
+        let caption = label("显示名称", size: 12, bold: true); caption.frame = NSRect(x: 0, y: 202, width: 360, height: 20); form.addSubview(caption)
+        let name = NSTextField(string: settings.displayName); name.placeholderString = "例如：我的 AI 工作台"; name.frame = NSRect(x: 0, y: 168, width: 360, height: 28); name.setAccessibilityLabel("显示名称"); form.addSubview(name)
+        let hint = label("1–40 个字符，用于窗口标题、菜单和完成提醒", size: 11, color: .secondaryLabelColor); hint.frame = NSRect(x: 0, y: 142, width: 360, height: 18); form.addSubview(hint)
+        let heading = label("监控的 Agent（至少选择一个）", size: 12, bold: true); heading.frame = NSRect(x: 0, y: 112, width: 360, height: 20); form.addSubview(heading)
+        let ids = ["codex", "workbuddy", "claude"], names = ["Codex", "WorkBuddy", "Claude 桌面端 Code"]
+        var choices = [NSButton]()
+        for i in 0..<3 { let button = NSButton(checkboxWithTitle: names[i], target: nil, action: nil); button.state = settings.enabled[ids[i]] == true ? .on : .off; button.frame = NSRect(x: 0, y: 80 - i * 28, width: 350, height: 24); form.addSubview(button); choices.append(button) }
+        let error = label("", size: 11, color: .systemRed); error.frame = NSRect(x: 0, y: 0, width: 360, height: 18); form.addSubview(error)
+        alert.accessoryView = form; alert.window.initialFirstResponder = name
+        while true {
+            show()
+            guard alert.runModal() == .alertFirstButtonReturn else { if initial { quit() }; return }
+            let agents = Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($0.element, choices[$0.offset].state == .on) })
+            guard let next = settings.configured(name: name.stringValue, agents: agents) else { error.stringValue = "请填写 1–40 字名称，并至少选择一个 Agent。"; continue }
+            let saved = queue.sync { monitor.store.save(next, "settings.json") }
+            guard saved else { error.stringValue = "设置未能保存，请检查状态目录的写入权限。"; continue }
+            let old = settings; settings = next
+            queue.sync { for id in ids where old.enabled[id] != next.enabled[id] { monitor.configure(id, enabled: next.enabled[id] == true) }; monitor.settings = next; monitor.persist() }
+            window.title = next.displayName; status.button?.toolTip = next.displayName; toast?.close(); buildMenu(); signature = ""; poll(); render(); return
+        }
     }
     func saveSettings() { let value = settings; queue.async { self.monitor.settings = value; self.monitor.persist() }; signature = ""; buildMenu(); render() }
     @objc func togglePin() { settings.pinned.toggle(); window.level = settings.pinned ? .floating : .normal; saveSettings() }
@@ -59,9 +87,9 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func togglePlatform(_ sender: NSMenuItem) { let p = ["codex", "workbuddy", "claude"][sender.tag]; let enabled = settings.enabled[p] != true; settings.enabled[p] = enabled; queue.async { self.monitor.configure(p, enabled: enabled) }; saveSettings(); poll() }
     @objc func toggleStartup() { do { if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() } else { try SMAppService.mainApp.register() }; buildMenu() } catch { let alert = NSAlert(); alert.messageText = "自动启动设置未完成"; alert.informativeText = error.localizedDescription + "\n可在系统设置 → 通用 → 登录项中检查。"; alert.runModal() } }
     @objc func resetPosition() { window.setContentSize(NSSize(width: 500, height: 590)); window.center() }
-    @objc func about() { let alert = NSAlert(); alert.messageText = "AI Agent 任务监控 · Mac"; alert.informativeText = "监控 Codex / WorkBuddy / Claude 桌面端 Code。只读本地数据，不调用模型。\n绿色表示本轮结束，不代表整个业务目标完成。\n当前列表与最近 200 条完成记录独立保存。右键完成项可单独加入完成，项目标题可折叠。\n\n" + health + "\n\n状态目录：" + dataPath; alert.runModal() }
+    @objc func about() { let alert = NSAlert(); alert.messageText = settings.displayName; alert.informativeText = "监控 Codex / WorkBuddy / Claude 桌面端 Code。只读本地数据，不调用模型。\n绿色表示本轮结束，不代表整个业务目标完成。\n当前列表与最近 200 条完成记录独立保存。右键完成项可单独加入完成，项目标题可折叠。\n\n" + health + "\n\n状态目录：" + dataPath; alert.runModal() }
     @objc func testNotification() { var row = TaskRow(); row.title = "提醒已开启"; row.project = "任务监控"; notify([row]) }
-    func poll() { guard !polling else { return }; polling = true
+    func poll() { guard settings.setupCompleted, !polling else { return }; polling = true
         queue.async {
             self.monitor.poll(); let current = self.monitor.current, history = self.monitor.recent, notices = self.monitor.notices, health = self.monitor.health.sorted { $0.key < $1.key }.map { $0.value }.joined(separator: " · ") + (self.monitor.store.error.isEmpty ? "" : " · " + self.monitor.store.error)
             DispatchQueue.main.async { self.current = current; self.history = history; self.health = health; self.polling = false; self.render(); if !notices.isEmpty { self.notify(notices.filter { row in current.contains { $0.round == row.round && $0.state == "完成" } }) } }
@@ -111,7 +139,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func openToast() { if let url = toastTarget { NSWorkspace.shared.open(url) } else { show() }; toast?.close() }
     func notify(_ tasks: [TaskRow]) { guard !tasks.isEmpty else { return }; if settings.sound { NSSound.beep() }; guard settings.notifications else { return }
         toastTimer?.invalidate(); toast?.close()
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 340, height: 100), styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false); panel.title = "本轮任务已完成"; panel.level = .floating; panel.isReleasedWhenClosed = false
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 340, height: 100), styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false); panel.title = settings.displayName + " · 本轮完成"; panel.level = .floating; panel.isReleasedWhenClosed = false
         let title = label(tasks.count == 1 ? tasks[0].name : "\(tasks.count) 个任务已完成", size: 13, bold: true); title.frame = NSRect(x: 15, y: 48, width: 310, height: 24); panel.contentView?.addSubview(title)
         toastTarget = tasks.count == 1 ? tasks[0].link : nil
         let button = NSButton(title: "查看任务", target: self, action: #selector(openToast)); button.frame = NSRect(x: 230, y: 10, width: 96, height: 28); panel.contentView?.addSubview(button)

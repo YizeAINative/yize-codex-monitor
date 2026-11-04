@@ -15,7 +15,7 @@ func append(_ value: [String: Any], to url: URL = file) throws { let f = try Fil
 try json(["type":"session_meta", "payload":["id":id,"cwd":"/a/shared"]]).write(to:file)
 try append(event("task_started", turn:"one", at:now.addingTimeInterval(-65)))
 var live = Runtime(); live.codex = true; live.workbuddy = true; live.claude = true; live.writers.insert(file.path)
-func engine(_ data: URL = state) -> Monitor { Monitor(home:home, data:data, wb:wb, desktop:desktop, transcripts:claude) }
+func engine(_ data: URL = state) -> Monitor { let m = Monitor(home:home, data:data, wb:wb, desktop:desktop, transcripts:claude); m.settings.enabled = ["codex":true,"workbuddy":true,"claude":true]; return m }
 let m = engine(); m.poll(runtime:live)
 check(m.current.count == 1 && m.current[0].state == "运行中", "initial active discovered")
 check(elapsed(m.current[0]).hasPrefix("01:"), "runtime from start")
@@ -88,4 +88,10 @@ cap.record(cap.recent[0]); check(cap.document.history.count == 200, "history dup
 check(fm.fileExists(atPath:state.appendingPathComponent("current-tasks.json").path) && fm.fileExists(atPath:state.appendingPathComponent("completion-history.json").path), "independent persisted documents")
 let badLink = TaskRow(id:"invalid"); check(badLink.link == nil, "invalid deep link rejected")
 check(Settings().sound == false, "default sound disabled")
+let legacy = try JSONDecoder().decode(Settings.self, from: Data("{\"enabled\":{\"codex\":false,\"workbuddy\":true},\"sound\":false,\"notifications\":false,\"pinned\":false,\"collapsed\":[]}".utf8))
+check(!legacy.setupCompleted && legacy.enabled["workbuddy"] == true && !legacy.notifications, "legacy settings survive upgrade and request setup")
+check(legacy.configured(name:"  ",agents:["codex":true]) == nil && legacy.configured(name:"My Monitor",agents:[:]) == nil, "configuration rejects empty name and no agents")
+let configured = legacy.configured(name:"  我的工作台  ",agents:["codex":true])!
+let decoded = try JSONDecoder().decode(Settings.self,from:JSONEncoder().encode(configured))
+check(decoded.setupCompleted && decoded.displayName == "我的工作台" && decoded.enabled["claude"] == false && !decoded.notifications, "name and agents persist without resetting other preferences")
 print("PASS: \(checks) checks")
