@@ -18,7 +18,7 @@ using System.Windows.Controls.Primitives;
 using System.Runtime.InteropServices;
 using Forms = System.Windows.Forms;
 
-[assembly: System.Reflection.AssemblyTitle("一泽 Codex 监控")]
+[assembly: System.Reflection.AssemblyTitle("一泽的 AI Agent 任务监控")]
 [assembly: System.Reflection.AssemblyProduct("CodexFloat")]
 [assembly: System.Reflection.AssemblyVersion("1.1.0.0")]
 namespace CodexFloat {
@@ -41,7 +41,7 @@ namespace CodexFloat {
                 var window=new MainWindow();app.MainWindow=window;
                 ThreadPool.RegisterWaitForSingleObject(showEvent,(o,t)=>app.Dispatcher.BeginInvoke(new Action(window.ShowWidget)),null,-1,false);
                 app.Run(window);return 0;
-            }catch(Exception ex){Log("startup",ex);System.Windows.MessageBox.Show("启动失败："+ex.Message,"一泽 Codex 监控");return 1;}
+            }catch(Exception ex){Log("startup",ex);System.Windows.MessageBox.Show("启动失败："+ex.Message,"一泽的 AI Agent 任务监控");return 1;}
             finally{mutex.ReleaseMutex();mutex.Dispose();showEvent.Dispose();}
         }
         static string StableHash(string s){uint hash=2166136261;foreach(char c in s)hash=(hash^c)*16777619;return hash.ToString("x");}
@@ -103,7 +103,7 @@ namespace CodexFloat {
         readonly Dictionary<string,TextBlock> runtimeLabels=new Dictionary<string,TextBlock>();
         public MainWindow(){
             settings=LoadSettings();engine=new MonitoringHub(Program.Home,Program.WorkBuddyHome,Program.DataDir,settings.MonitorCodex,settings.MonitorWorkBuddy);
-            Title=Program.Demo?"一泽 Codex 样式预览（非实时）":"一泽 Codex 监控";FontFamily=new FontFamily("Microsoft YaHei UI, Segoe UI");FontSize=13;
+            Title=Program.Demo?"一泽的 AI Agent 样式预览（非实时）":"一泽的 AI Agent 任务监控";FontFamily=new FontFamily("Microsoft YaHei UI, Segoe UI");FontSize=13;
             Width=Math.Max(330,Math.Min(640,settings.Width));SizeToContent=SizeToContent.Height;MinHeight=140;MaxHeight=620;
             WindowStyle=WindowStyle.None;ResizeMode=ResizeMode.NoResize;AllowsTransparency=true;Background=Brushes.Transparent;Topmost=settings.AlwaysOnTop;ShowInTaskbar=Program.DebugTaskbar;
             UseLayoutRounding=true;SnapsToDevicePixels=true;TextOptions.SetTextFormattingMode(this,TextFormattingMode.Display);
@@ -113,7 +113,7 @@ namespace CodexFloat {
             var header=new Grid{Margin=new Thickness(16,10,10,9),Background=Brushes.Transparent};layout.Children.Add(header);
             header.ColumnDefinitions.Add(new ColumnDefinition());header.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
             var heading=new StackPanel{Orientation=Orientation.Horizontal};heading.Children.Add(new System.Windows.Shapes.Ellipse{Width=6,Height=6,Fill=Theme.Green,Margin=new Thickness(0,0,8,0),VerticalAlignment=VerticalAlignment.Center});
-            var title=Theme.Text(Program.Demo?"样式预览 · 非实时":"一泽 Codex 监控",12,Theme.Ink);title.FontWeight=FontWeights.SemiBold;heading.Children.Add(title);header.Children.Add(heading);
+            var title=Theme.Text(Program.Demo?"样式预览 · 非实时":"一泽的 AI Agent 任务监控",12,Theme.Ink);title.FontWeight=FontWeights.SemiBold;heading.Children.Add(title);header.Children.Add(heading);
             heading.MouseLeftButtonDown+=(o,e)=>{if(e.ClickCount==2){ToggleTopmost();return;}try{DragMove();SaveSettings();}catch{}};
             var controls=new StackPanel{Orientation=Orientation.Horizontal};Grid.SetColumn(controls,1);header.Children.Add(controls);
             pin=Theme.Button("⌖","切换置顶",25);pin.Click+=(o,e)=>ToggleTopmost();controls.Children.Add(pin);
@@ -124,7 +124,7 @@ namespace CodexFloat {
             var clear=Theme.Button("清除完成","仅从悬浮列表移除已结束项",64);clear.FontSize=11;clear.Height=22;clear.Click+=(o,e)=>{engine.ClearFinished();Refresh();};Grid.SetColumn(clear,1);footer.Children.Add(clear);
             var grip=new Thumb{Width=10,Height=12,HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Bottom,Cursor=Cursors.SizeWE,Opacity=.15,Margin=new Thickness(0,0,3,3)};
             grip.DragDelta+=(o,e)=>{Width=Math.Max(330,Math.Min(640,Width+e.HorizontalChange));};grip.DragCompleted+=(o,e)=>SaveSettings();outer.Children.Add(grip);
-            tray=new Forms.NotifyIcon{Icon=System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location),Visible=true,Text="一泽 Codex 监控"};
+            tray=new Forms.NotifyIcon{Icon=System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location),Visible=true,Text="一泽的 AI Agent 任务监控"};
             var tm=new Forms.ContextMenuStrip();tm.Items.Add("显示悬浮窗",null,(o,e)=>Dispatcher.BeginInvoke(new Action(ShowWidget)));tm.Items.Add("清除已完成",null,(o,e)=>Dispatcher.BeginInvoke(new Action(()=>{engine.ClearFinished();Refresh();})));tm.Items.Add(new Forms.ToolStripSeparator());tm.Items.Add("退出",null,(o,e)=>Dispatcher.BeginInvoke(new Action(Exit)));tray.ContextMenuStrip=tm;
             tray.DoubleClick+=(o,e)=>Dispatcher.BeginInvoke(new Action(ShowWidget));
             engine.Completed+=items=>Dispatcher.BeginInvoke(new Action(()=>OnCompleted(items)));
@@ -148,10 +148,10 @@ namespace CodexFloat {
             button.ContextMenu.IsOpen=true;}
         void UpdatePlatforms(){engine.Configure(settings.MonitorCodex,settings.MonitorWorkBuddy);SaveSettings();signature="platform-selection-changed";Refresh();}
         ContextMenu BuildMenu(){var m=Theme.Menu();m.Items.Add(new MenuItem{Header="监控平台",IsEnabled=false});AddCheck(m,"Codex",settings.MonitorCodex,()=>{settings.MonitorCodex=!settings.MonitorCodex;UpdatePlatforms();});AddCheck(m,"WorkBuddy",settings.MonitorWorkBuddy,()=>{settings.MonitorWorkBuddy=!settings.MonitorWorkBuddy;UpdatePlatforms();});m.Items.Add(new Separator());AddCheck(m,"始终置顶",settings.AlwaysOnTop,()=>ToggleTopmost());AddCheck(m,"完成时播放提示音",settings.Sound,()=>{settings.Sound=!settings.Sound;SaveSettings();});AddCheck(m,"完成时弹出提醒",settings.Notifications,()=>{settings.Notifications=!settings.Notifications;SaveSettings();});m.Items.Add(new Separator());
-            var test=new MenuItem{Header="测试完成提醒"};test.Click+=(o,e)=>OnCompleted(new List<Session>{new Session{Title="提醒已开启",Cwd="一泽 Codex 监控",Status="completed"}});m.Items.Add(test);
+            var test=new MenuItem{Header="测试完成提醒"};test.Click+=(o,e)=>OnCompleted(new List<Session>{new Session{Title="提醒已开启",Cwd="一泽的 AI Agent 任务监控",Status="completed"}});m.Items.Add(test);
             var reset=new MenuItem{Header="重置窗口位置"};reset.Click+=(o,e)=>{settings.Left=-99999;settings.Top=-99999;PositionWindow();SaveSettings();};m.Items.Add(reset);
             var startup=new MenuItem{Header="开机自动启动",IsCheckable=true,IsChecked=StartupEnabled()};startup.Click+=(o,e)=>SetStartup(startup.IsChecked);m.Items.Add(startup);
-            m.Items.Add(new Separator());var about=new MenuItem{Header="关于 / 使用说明"};about.Click+=(o,e)=>MessageBox.Show(this,"一泽 Codex 监控 1.1.0\n\n支持 Codex / WorkBuddy，在菜单中勾选监控平台。\n新一轮开始会自动加入列表。\n绿色代表本轮结束，点击标题打开对应对话。\n中断不会标为完成；状态待确认时不会误报。\n完成项保留到手动清除。\n拖动顶部移动；右下角调整宽度。\n\n仅在本机读取会话元数据，无网络请求。\n配置与监控记录："+Program.DataDir+"\n\n项目：github.com/YizeAINative/yize-codex-monitor\n参考：github.com/LH-03/agent-monitor-hud", "关于一泽 Codex 监控");m.Items.Add(about);
+            m.Items.Add(new Separator());var about=new MenuItem{Header="关于 / 使用说明"};about.Click+=(o,e)=>MessageBox.Show(this,"一泽的 AI Agent 任务监控 1.1.0\n\n支持 Codex / WorkBuddy，在菜单中勾选监控平台。\n新一轮开始会自动加入列表。\n绿色代表本轮结束，点击标题打开对应对话。\n中断不会标为完成；状态待确认时不会误报。\n完成项保留到手动清除。\n拖动顶部移动；右下角调整宽度。\n\n仅在本机读取会话元数据，无网络请求。\n配置与监控记录："+Program.DataDir+"\n\n项目：github.com/YizeAINative/yize-codex-monitor\n参考：github.com/LH-03/agent-monitor-hud", "关于一泽的 AI Agent 任务监控");m.Items.Add(about);
             var exit=new MenuItem{Header="退出软件"};exit.Click+=(o,e)=>Exit();m.Items.Add(exit);return m;}
         void AddCheck(ContextMenu m,string name,bool check,Action action){var item=new MenuItem{Header=name,IsCheckable=true,IsChecked=check};item.Click+=(o,e)=>action();m.Items.Add(item);}
         bool StartupEnabled(){using(var key=Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))return key!=null&&key.GetValue("CodexFloat")!=null;}
@@ -163,16 +163,21 @@ namespace CodexFloat {
         void Refresh(){latest=Program.Demo?DemoSessions():engine.Snapshot();string sig=string.Join("|",latest.OrderBy(s=>s.Key).Select(s=>s.Key+"/"+s.Label+"/"+s.Group+"/"+s.Status+"/"+s.StartedAt.Ticks));
             int running=latest.Count(s=>s.Status=="running"),done=latest.Count(s=>s.Status=="completed"),other=latest.Count-running-done;
             summary.Text=latest.Count==0?(Program.Demo?"演示界面":engine.Health):running+" 个处理中"+(done>0?" · "+done+" 个完成":"")+(other>0?" · "+other+" 个待查看":"");summary.ToolTip="开始执行自动加入 · 绿色代表本轮结束";
-            tray.Text="一泽 Codex 监控 · "+running+" 处理中 · "+done+" 完成";
+            tray.Text="一泽的 AI Agent 任务监控 · "+running+" 处理中 · "+done+" 完成";
             if(sig!=signature||list.Children.Count==0){signature=sig;BuildList();if(Program.EvidenceDir!=""&&ready)Dispatcher.BeginInvoke(new Action(()=>Capture(Path.Combine(Program.EvidenceDir,"window.png"))),DispatcherPriority.ContextIdle);}
             foreach(var session in latest){TextBlock label;if(runtimeLabels.TryGetValue(session.Key,out label))label.Text=session.RuntimeText(DateTime.UtcNow);}
             if((DateTime.UtcNow-lastStatusExport).TotalSeconds>=5){try{Json.Save(Path.Combine(Program.DataDir,"status.json"),new {updatedAt=DateTime.UtcNow,health=engine.Health,running=running,completed=done,sessions=latest});}catch{}lastStatusExport=DateTime.UtcNow;}
         }
         void BuildList(){double old=scroll.VerticalOffset;list.Children.Clear();runtimeLabels.Clear();
             if(latest.Count==0){var empty=new StackPanel{Margin=new Thickness(18,27,18,32)};var line=Theme.Text("等待新的任务",14,Theme.Ink);line.HorizontalAlignment=HorizontalAlignment.Center;empty.Children.Add(line);var sub=Theme.Text(settings.MonitorCodex||settings.MonitorWorkBuddy?"已选平台开始执行后，会自动出现在这里":"请在右上角设置中勾选监控平台",11,Theme.Muted);sub.HorizontalAlignment=HorizontalAlignment.Center;sub.Margin=new Thickness(0,10,0,0);empty.Children.Add(sub);list.Children.Add(empty);return;}
-            foreach(var group in latest.GroupBy(s=>s.Platform+"|"+s.Cwd+"|"+s.Group).OrderByDescending(g=>g.Max(s=>s.StartedAt))){
-                var project=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(10,11,10,5)};project.Children.Add(new FolderMark());var label=Theme.Text(group.First().Group,13,Theme.Ink);label.Margin=new Thickness(8,0,0,0);label.MaxWidth=Width-160;label.ToolTip=group.First().Cwd;project.Children.Add(label);var platform=Theme.Text(group.First().PlatformName,10,Theme.Muted);platform.Margin=new Thickness(9,0,0,0);project.Children.Add(platform);list.Children.Add(project);
-                foreach(var session in group.OrderByDescending(s=>s.StartedAt))list.Children.Add(Row(session));
+            foreach(var platformGroup in latest.GroupBy(s=>s.Platform??"codex").OrderByDescending(g=>g.Max(s=>s.StartedAt))){
+                bool buddy=platformGroup.Key=="workbuddy";
+                var card=new Border{CornerRadius=new CornerRadius(8),BorderThickness=new Thickness(1),BorderBrush=Theme.B(buddy?"#DEE6EC":"#E0E6DB"),Background=Theme.B(buddy?"#F3F6F9":"#F4F7F0"),Margin=new Thickness(0,3,0,8),Padding=new Thickness(7,8,7,7)};
+                var body=new StackPanel();card.Child=body;var platformTitle=Theme.Text(platformGroup.First().PlatformName,11,Theme.B(buddy?"#6B8193":"#718366"));platformTitle.FontWeight=FontWeights.SemiBold;platformTitle.Margin=new Thickness(8,0,8,2);body.Children.Add(platformTitle);
+                foreach(var group in platformGroup.GroupBy(s=>s.Cwd+"|"+s.Group).OrderByDescending(g=>g.Max(s=>s.StartedAt))){
+                    var project=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(8,9,8,4)};project.Children.Add(new FolderMark());var label=Theme.Text(group.First().Group,13,Theme.Ink);label.Margin=new Thickness(8,0,0,0);label.MaxWidth=Width-110;label.ToolTip=group.First().Cwd;project.Children.Add(label);body.Children.Add(project);
+                    foreach(var session in group.OrderByDescending(s=>s.StartedAt))body.Children.Add(Row(session));
+                }list.Children.Add(card);
             }scroll.ScrollToVerticalOffset(old);
         }
         UIElement Row(Session session){
