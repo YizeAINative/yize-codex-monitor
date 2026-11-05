@@ -198,6 +198,7 @@ func hydrateCodex(_ url: URL, size: UInt64, row: inout TaskRow) throws -> Int {
 }
 final class Track {
     var reader = Reader(), row: TaskRow, cli = "", seed: Date?, hydrated = false
+    var pendingInitial: Bool?, pendingDiscovery = false
     var identity: UInt64 = 0
     init(_ row: TaskRow) { self.row = row }
 }
@@ -276,7 +277,7 @@ final class Monitor {
         persist()
     }
     func files(_ root: URL, ext: String) -> [URL] { guard let e = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) else { return [] }; return e.compactMap { $0 as? URL }.filter { $0.pathExtension == ext } }
-    func readTrack(_ t: Track) throws {
+    func readTrack(_ t: Track) throws -> Bool {
         let url = URL(fileURLWithPath: t.row.file), attr = try FileManager.default.attributesOfItem(atPath: url.path)
         let size = (attr[.size] as? NSNumber)?.uint64Value ?? 0, inode = (attr[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
         let fresh = !t.hydrated || size < t.reader.offset || (t.identity != 0 && inode != t.identity)
@@ -307,6 +308,8 @@ final class Monitor {
         if ["运行中", "等待输入"].contains(t.row.state), now.timeIntervalSince(t.row.activity ?? .distantPast) > 180, !runtime.hasWriter(t.row.file) { t.row.state = "待确认" }
         else if t.row.state == "待确认", t.row.started != nil, t.row.finished == nil, runtime.hasWriter(t.row.file) { t.row.state = "运行中" }
         t.hydrated = true
+        // Do not publish an intermediate completion while newer events are still queued.
+        return t.reader.offset >= size
     }
     func pollCodex() {
         let initial = !initialized.contains("codex"), dir = home.appendingPathComponent("sessions")
@@ -337,8 +340,11 @@ final class Monitor {
                     var row = document.sessions["codex:" + id] ?? TaskRow(); row.id = id; row.cwd = p["cwd"] as? String ?? ""; row.file = url.path
                     tracks[url.path] = Track(row); discovered = true
                 }
-                let t = tracks[url.path]!; try readTrack(t); t.row.title = titles[t.row.id] ?? t.row.title; t.row.project = localProjects[assignments[t.row.id] ?? ""] ?? projectNames[t.row.cwd] ?? URL(fileURLWithPath: t.row.cwd).lastPathComponent
-                t.row = reconcile(t.row, initial: initial, discovered: discovered)
+                let t = tracks[url.path]!
+                if t.pendingInitial == nil { t.pendingInitial = initial; t.pendingDiscovery = discovered }
+                guard try readTrack(t) else { continue }
+                t.row.title = titles[t.row.id] ?? t.row.title; t.row.project = localProjects[assignments[t.row.id] ?? ""] ?? projectNames[t.row.cwd] ?? URL(fileURLWithPath: t.row.cwd).lastPathComponent
+                t.row = reconcile(t.row, initial: t.pendingInitial ?? initial, discovered: t.pendingDiscovery); t.pendingInitial = nil
             } catch { failed = true; if let t = tracks[url.path] { if var row = document.sessions[t.row.key], ["运行中", "等待输入"].contains(row.state) { row.state = "待确认"; document.sessions[row.key] = row } } }
         }
         health["codex"] = failed ? "Codex 部分日志不可读，正在重试" : "Codex 已连接"; initialized.insert("codex")
@@ -358,7 +364,7 @@ final class Monitor {
                 let key = "workbuddy:" + id; present.insert(key); let old = document.sessions[key]; var row = old ?? TaskRow(); row.id = id; row.platform = "workbuddy"; row.cwd = data["cwd"] ?? ""; row.project = URL(fileURLWithPath: row.cwd).lastPathComponent; row.title = data["title"] ?? ""; row.file = db.path
                 let raw = data["status"]?.lowercased() ?? "", at = Date(timeIntervalSince1970: (Double(data["updated_at"] ?? "") ?? 0) / 1000)
                 let states = ["working":"运行中", "planning":"运行中", "running":"运行中", "in_progress":"运行中", "inprogress":"运行中", "pending":"等待输入", "awaiting_input":"等待输入", "waiting":"等待输入", "completed":"完成", "terminated":"已中断", "interrupted":"已中断", "cancelled":"已中断", "canceled":"已中断", "error":"失败", "failed":"失败", "errored":"失败", "archived":"已归档"]
-                let state = states[raw] ?? "待确认", busy = old.map { ["运行中", "等待输入"].contains($0.state) && $0.finished == nil } ?? false
+                let state = states[raw] ?? "待确认", busy = old.map { ["运行中", "等待输入", "待确认"].contains($0.state) && $0.finished == nil && !$0.turn.isEmpty } ?? false
                 if state == "运行中" && (!busy || !row.visible || row.turn.isEmpty) { row.turn = "wb-" + (data["updated_at"] ?? ""); row.started = at; row.finished = nil; row.estimated = initial; row.visible = true }
                 if state == "等待输入" && !busy && !row.visible && (Double(data["activity"] ?? "") ?? 0) > (Double(data["created"] ?? "") ?? 0) && now.timeIntervalSince(at) < 172800 { row.turn = "wb-" + (data["updated_at"] ?? ""); row.started = at; row.estimated = true; row.visible = true }
                 row.state = state; row.activity = at
@@ -387,11 +393,15 @@ final class Monitor {
             guard let (metadata, seed) = records[cli] else { continue }
             let discovered = tracks[url.path] == nil
             let t = tracks[url.path] ?? Track(metadata); t.cli = cli; t.seed = seed; t.row.file = url.path; t.row.title = metadata.title; t.row.cwd = metadata.cwd; t.row.project = metadata.project; tracks[url.path] = t
-            do { try readTrack(t)
+            if t.pendingInitial == nil { t.pendingInitial = initial; t.pendingDiscovery = discovered }
+            do { guard try readTrack(t) else { continue }
                 if let seed, (t.row.started ?? .distantPast) > seed.addingTimeInterval(5) { continue }
                 if let seed, (t.row.started ?? .distantPast) < seed { t.row.started = seed; t.row.turn = "desktop-\(seed.timeIntervalSince1970)"; t.row.activity = seed; t.row.finished = nil; t.row.state = runtime.claude ? "运行中" : "待确认"; t.row.estimated = true }
-                t.row = reconcile(t.row, initial: initial, discovered: discovered)
-            } catch { failures = true }
+                t.row = reconcile(t.row, initial: t.pendingInitial ?? initial, discovered: t.pendingDiscovery); t.pendingInitial = nil
+            } catch {
+                failures = true
+                if var row = document.sessions[t.row.key], ["运行中", "等待输入"].contains(row.state) { row.state = "待确认"; document.sessions[row.key] = row }
+            }
         }
         let desktopIDs = Set(records.values.map { $0.0.id })
         for (key, row) in document.sessions where row.platform == "claude" && !desktopIDs.contains(row.id) { document.sessions[key]?.visible = false }

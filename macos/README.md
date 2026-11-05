@@ -1,6 +1,6 @@
 # macOS 原生版
 
-以 Windows v1.6.0 的会话与轮次逻辑为依据，用 Swift/AppKit 实现。Windows C# 源码保留，Mac 入口为 `main.swift`，监控核心为 `Model.swift`。
+v1.7.0：以 Windows 版的会话与轮次逻辑为依据，用 Swift/AppKit 实现，现已纳入主仓库。Windows C# 源码保留，Mac 入口为 `main.swift`，监控核心为 `Model.swift`。
 
 ## 构建和运行
 
@@ -25,7 +25,7 @@ open "dist/Codex Monitor.app"
 - Claude：默认 `~/Library/Application Support/Claude/claude-code-sessions`，支持 `CLAUDE_DESKTOP_HOME`。仅接入桌面 Code 索引所关联的 `~/.claude/projects` 日志（支持 `CLAUDE_CONFIG_DIR`），不接入普通 Chat/Cowork 或独立 CLI 会话。初次最多读取日志末尾 256 KiB，后续每轮最多增量 256 KiB；索引提供缺失开始时间时带 `≈`。中断和 turn_duration 不判为成功。
 - 运行状态同时核对平台进程；Codex 安静超过三分钟时还检查日志写入描述符。没有依据时回到待确认，不伪造完成。Claude 要求桌面程序派生的 stream-json 工作进程，打开窗口本身不算执行。
 - 开始新轮次自动加入当前列表；忽略其他轮次迟到的结束事件。完成/中断/失败冻结计时，缺失起点显示 `--:--`。
-- 目录约每十秒补查，已知文件每 0.8 秒检查增量；进程依据每五秒更新，计时每秒更新。采集在后台串行队列运行，内容未变化时保留界面。
+- 启动时立即检查一次，此后每 10 秒检查目录、已知日志增量与平台进程，计时每秒更新。采集在后台串行队列运行，内容未变化时保留界面。
 
 ## 当前列表与完成历史
 
@@ -69,7 +69,7 @@ open "dist/Codex Monitor.app"
 
 ## 自动识别监控对象
 
-菜单栏「自动识别本机运行的 Agent」开启后，约每5秒根据本机进程自动选择 Codex、WorkBuddy、Claude 桌面端。Agent 启动后接入，关闭后停止读取并隐藏当前项；已保存的完成历史保留，重新接入不补播期间提醒。打开 Claude 桌面端会接入索引，但是否运行 Code 任务仍由生命周期和工作进程确认。没有受支持的 Agent 时显示等待启动，沉浸计数为0。不会自动适配任意其他 Agent。
+菜单栏「自动识别本机运行的 Agent」开启后，约每10秒根据本机进程自动选择 Codex、WorkBuddy、Claude 桌面端。Agent 启动后接入，关闭后停止读取并隐藏当前项；已保存的完成历史保留，重新接入不补播期间提醒。打开 Claude 桌面端会接入索引，但是否运行 Code 任务仍由生命周期和工作进程确认。没有受支持的 Agent 时显示等待启动，沉浸计数为0。不会自动适配任意其他 Agent。
 
 新用户默认自动识别，旧用户保留原手动模式，可从菜单或「名称与监控设置…」开启。自动模式不覆盖手动勾选，关闭自动识别后恢复之前的选择。
 

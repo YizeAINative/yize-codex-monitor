@@ -1,10 +1,23 @@
 # 一泽的 AI Agent 任务监控
 
-## macOS fork
+独立的 Windows / macOS 悬浮小软件。支持 **Codex / WorkBuddy / Claude 桌面端 Code**，可选择监控平台；以项目分组展示当前对话，开始执行自动加入，运行中转圈并实时计时，本轮完成变绿并提醒，点击标题打开对应平台的对话。
 
-此 fork 增加 Swift/AppKit 原生 Mac 版本，迁移 Codex / WorkBuddy / Claude 桌面端 Code 的轮次、持久化和提醒逻辑。构建、使用和验证范围见 [macos/README.md](macos/README.md)。下文为上游 Windows 版说明。
+## 最新版本 · v1.7.0（2026-11-05）
 
-独立的 Windows 悬浮小软件。支持 **Codex / WorkBuddy / Claude 桌面端 Code**，可勾选监控平台；以项目分组展示当前对话，开始执行自动加入，运行中转圈并实时计时，本轮完成变绿并提醒，点击标题打开对应平台的对话。
+- 纳入 [blossom013 贡献的 macOS 原生版本（PR #1）](https://github.com/YizeAINative/yize-codex-monitor/pull/1)，支持首次配置、自动识别 Agent、沉浸模式和菜单栏入口。
+- Windows 和 macOS 统一为 **每 10 秒检查本地日志及平台状态**，启动时立即检查；界面计时仍每秒刷新。
+- 修正 Mac 版 WorkBuddy 重启恢复计时、Claude 日志积压时的中间完成误报及日志不可读时的状态。
+- 加入 Windows、Apple Silicon 和 Intel Mac 的自动构建与测试。
+
+从 [v1.7.0 发布页](https://github.com/YizeAINative/yize-codex-monitor/releases/tag/v1.7.0) 下载对应系统的便携包，或查看 [所有版本](https://github.com/YizeAINative/yize-codex-monitor/releases)。
+
+| 系统 | 下载与运行 |
+| --- | --- |
+| Windows | `Yize-AI-Agent-Monitor-1.7.0.zip`，解压后运行 `CodexFloat.exe`。 |
+| Mac · Apple Silicon | `Yize-AI-Agent-Monitor-1.7.0-macOS-arm64.zip`，解压后运行 `Codex Monitor.app`。 |
+| Mac · Intel | `Yize-AI-Agent-Monitor-1.7.0-macOS-x86_64.zip`，解压后运行 `Codex Monitor.app`。 |
+
+Mac 需要 macOS 13+，使用临时签名，尚未进行 Developer ID 公证；功能、构建方法及验证范围见 [Mac 使用说明](macos/README.md)。以下界面说明以 Windows 版为主，Mac 保留原生窗口和菜单栏交互。
 
 顶部提供 **当前任务 / 最近完成** 两个标签页。完成记录独立保存最近 200 条，清除当前列表、继续提问、取消平台勾选或重启软件，都不会删除已保存的完成记录。
 
@@ -26,7 +39,7 @@ Codex 使用浅绿色，WorkBuddy 使用浅蓝色，Claude Code 使用浅橙色�
 
 - **运行中**：右侧转圈。
 - **本轮计时**：转圈左侧每秒更新运行时间，如 `03:28` / `01:03:28`；完成后冻结，继续提问进入新一轮时重置。
-- **状态检查**：启动时立即检查一次，此后每 20 秒读取一次各平台本地日志或状态数据；任务开始、完成和提醒通常在下一次检查时更新，界面计时仍每秒刷新。
+- **状态检查**：启动时立即检查一次，此后每 10 秒读取一次各平台本地日志或状态数据；任务开始、完成和提醒通常在下一次检查时更新，界面计时仍每秒刷新。
 - **本轮完成**：绿色勾选和完成文字，弹出一次提醒并播放提示音。完成项一直保留到手动清除。
 - **继续提问**：同一个对话自动回到转圈，下一轮完成再次提醒。
 - **最近完成**：按平台分区，同一文件夹只显示一个可折叠标题，组内按完成时间倒序排列。每个会话只显示最新一次完成，后续完成会更新这条记录。不同会话即使名称相同也分别显示。每条记录显示 `MM-dd HH:mm` 格式的完成时间、本轮用时和对话标题，点击可打开对应对话。
@@ -61,7 +74,7 @@ Claude 适配状态单独保存在 `%LOCALAPPDATA%\CodexFloat\claude-desktop-cod
 - `session_index.jsonl` 的对话标题。
 - `.codex-global-state.json` 中的项目名称与对话归属。
 
-自动忽略内部子代理。监控整个会话目录，因此早期日期创建的旧对话恢复执行也能识别。每轮检查后等待 20 秒再读取各平台状态；Codex 在检查时同时补查目录和已发现对话的文件大小（包括已完成项），避免 Windows 延迟文件变化通知时漏掉下一轮提问。文件变化通知只标记待检查文件，由下一轮统一读取。未监控过的历史完成对话不会在首次启动时集中弹提醒。
+自动忽略内部子代理。监控整个会话目录，因此早期日期创建的旧对话恢复执行也能识别。每轮检查后等待 10 秒再读取各平台状态；Codex 在检查时同时补查目录和已发现对话的文件大小（包括已完成项），避免 Windows 延迟文件变化通知时漏掉下一轮提问。文件变化通知只标记待检查文件，由下一轮统一读取。未监控过的历史完成对话不会在首次启动时集中弹提醒。
 
 本软件自己的设置、列表状态及简要诊断保存在 `%LOCALAPPDATA%\CodexFloat`，完成提醒按对话与执行轮次去重。
 
