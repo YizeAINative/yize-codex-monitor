@@ -1,5 +1,17 @@
 # Mac 迁移验收记录
 
+## v1.7.0 合入复核（2026-11-05，Asia/Shanghai）
+
+- Windows 与 Mac 检查间隔统一为 10 秒；启动立即检查，计时每秒更新。
+- 修复 WorkBuddy 从本地缓存或进程不可用状态恢复时重置轮次与计时的问题。
+- 日志积压尚未读到末尾时，不把中间轮次的完成状态作为当前状态弹出提醒；成功完成记录仍可保留在历史。
+- Claude 日志需要读取但失败时转为待确认，恢复可读后继续检测。
+- 在 GitHub 托管的 Apple Silicon、Intel Mac 上分别通过 65 项隔离检查、Swift/AppKit 应用构建、`codesign --verify --deep --strict` 和 Info.plist 校验；Windows 的 162 项核心检查与 12 项 WPF 交互检查也已通过。[完整检查记录](https://github.com/YizeAINative/yize-codex-monitor/actions/runs/41949337290)
+
+此次合入检查没有替代真实 Agent 的完整端到端操作、系统重新登录或 Developer ID 公证；Mac 发行包为临时签名。以下保留贡献者在原 PR 中提供的本机验收记录。
+
+## 原 PR 的本机验收记录
+
 目标：按 Windows v1.6.0 的实际会话逻辑实现原生 Mac 版本。验证日期：2026-11-04（Asia/Tokyo）。
 
 | 原版行为 | Mac 实现 | 证据 |

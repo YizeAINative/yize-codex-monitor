@@ -7,6 +7,7 @@
 - 纳入 [blossom013 贡献的 macOS 原生版本（PR #1）](https://github.com/YizeAINative/yize-codex-monitor/pull/1)，支持首次配置、自动识别 Agent、沉浸模式和菜单栏入口。
 - Windows 和 macOS 统一为 **每 10 秒检查本地日志及平台状态**，启动时立即检查；界面计时仍每秒刷新。
 - 修正 Mac 版 WorkBuddy 重启恢复计时、Claude 日志积压时的中间完成误报及日志不可读时的状态。
+- Mac 日志未变化时跳过增量读取；两次检查之间已结束的轮次仍保留完成历史，当前列表显示最新轮次。
 - 加入 Windows、Apple Silicon 和 Intel Mac 的自动构建与测试。
 
 从 [v1.7.0 发布页](https://github.com/YizeAINative/yize-codex-monitor/releases/tag/v1.7.0) 下载对应系统的便携包，或查看 [所有版本](https://github.com/YizeAINative/yize-codex-monitor/releases)。
@@ -101,6 +102,8 @@ Claude 适配状态单独保存在 `%LOCALAPPDATA%\CodexFloat\claude-desktop-cod
 使用本机 .NET Framework 编译器，无 NuGet 或 npm 依赖。`CoreTests.exe` 在独立临时目录运行，不修改真实 Codex 数据。
 
 已通过 162 项核心检查和 12 项 WPF 界面交互检查。覆盖列表持久化、启动复核、进程不可用、离线期间完成、单条加入完成、移出后重启不重复、新轮次重新加入、历史去重、备份恢复与文件夹折叠。界面检查实际触发菜单与按钮事件，验证只移出选中条目及保留最近完成。测试使用隔离数据，不重启电脑或修改用户会话。
+
+Mac 使用 `bash macos/test.sh` 和 `bash macos/build.sh`。v1.7.0 已在 GitHub 的 Apple Silicon 与 Intel macOS 环境分别通过 65 项核心检查、应用构建及临时签名校验；Windows 自动检查同样通过，见 [合入前验证记录](https://github.com/YizeAINative/yize-codex-monitor/actions/runs/41949337290)。自动检查使用隔离数据，真实 Agent 的完整操作与登录自启验证范围见 [Mac 验收记录](macos/VERIFICATION.md)。
 
 开发诊断参数：
 

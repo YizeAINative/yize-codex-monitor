@@ -59,7 +59,7 @@ open "dist/Codex Monitor.app"
 
 ## 验证范围
 
-`macos/test.sh` 的 65 项隔离检查覆盖轮次隔离、增量和 UTF-8 边界、大文件恢复、启动去噪、历史去重与容量、重启恢复、移出后重新提问、平台开关、WorkBuddy SQLite 状态、Claude 桌面身份/结束/中断、备份恢复等。它们是 Mac 专用验收，不等同于已在 Mac 执行上游的 162 项 .NET 与 12 项 WPF 检查。
+`macos/test.sh` 的 65 项隔离检查覆盖轮次隔离、增量和 UTF-8 边界、大文件恢复、启动去噪、历史去重与容量、重启恢复、移出后重新提问、平台开关、WorkBuddy SQLite 状态、Claude 桌面身份/结束/中断、备份恢复等。新增覆盖 WorkBuddy 恢复计时、Claude 日志积压与读取失败后的恢复。这些检查已在 GitHub 的 Apple Silicon 和 Intel macOS 环境通过，应用构建和临时签名也已校验；[验证记录](https://github.com/YizeAINative/yize-codex-monitor/actions/runs/41949337290)。Windows 的 162 项 .NET 与 12 项 WPF 检查在独立 Windows 环境执行。
 
 本机三平台的来源读取已检查；真实任务完成通知、退出平台和重新登录等场景的覆盖程度以随版本提供的验收记录为准。操作系统可能限制进程或文件描述符检查；无法确认时显示待确认。首次 Claude 尾部缺少事件时依赖桌面索引，可能只能提供估算或待确认状态。
 
