@@ -161,11 +161,11 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func openToast() { if let url = toastTarget { NSWorkspace.shared.open(url) } else { show() }; toast?.close() }
     func notify(_ tasks: [TaskRow]) { guard !tasks.isEmpty else { return }; if settings.sound { NSSound.beep() }; guard settings.notifications else { return }
         toastTimer?.invalidate(); toast?.close()
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 340, height: 100), styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false); panel.title = settings.displayName + " · 本轮完成"; panel.level = .floating; panel.isReleasedWhenClosed = false
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 340, height: 100), styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false); panel.title = settings.displayName + " · 本轮完成"; panel.level = .floating; panel.isReleasedWhenClosed = false; panel.isOpaque = false; panel.alphaValue = 0.8
         let title = label(tasks.count == 1 ? tasks[0].name : "\(tasks.count) 个任务已完成", size: 13, bold: true); title.frame = NSRect(x: 15, y: 48, width: 310, height: 24); panel.contentView?.addSubview(title)
         toastTarget = tasks.count == 1 ? tasks[0].link : nil
         let button = NSButton(title: "查看任务", target: self, action: #selector(openToast)); button.frame = NSRect(x: 230, y: 10, width: 96, height: 28); panel.contentView?.addSubview(button)
-        if let screen = NSScreen.main?.visibleFrame { panel.setFrameOrigin(NSPoint(x: screen.maxX - 360, y: screen.maxY - 150)) }; panel.orderFrontRegardless(); toast = panel; toastTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: false) { [weak self] _ in self?.toast?.close(); self?.toast = nil }
+        if let screen = NSScreen.main?.visibleFrame { panel.setFrameOrigin(NSPoint(x: screen.maxX - 360, y: screen.maxY - 150)) }; panel.orderFrontRegardless(); toast = panel; let dismiss = Timer(timeInterval: 15, repeats: false) { [weak self] _ in self?.toast?.close(); self?.toast = nil }; RunLoop.main.add(dismiss, forMode: .common); RunLoop.main.add(dismiss, forMode: .modalPanel); toastTimer = dismiss
     }
 }
 if args.contains("--dump") {

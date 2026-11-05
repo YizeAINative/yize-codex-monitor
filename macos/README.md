@@ -76,3 +76,5 @@ open "dist/Codex Monitor.app"
 ## 应用图标
 
 使用深蓝底色、银色星轨和薄荷绿状态点的原创生成图标，资源为 `macos/Assets/AppIcon.png` 与 `AppIcon.icns`。`bash macos/make-icon.sh` 可重新生成标准尺寸的 ICNS，构建脚本自动打包到应用资源目录。
+
+完成提醒采用80%不透明度的半透明窗口，显示15秒后自动关闭；显示新的完成提醒时重新计时。计时覆盖菜单跟踪和配置对话框，不因这些交互暂停。
