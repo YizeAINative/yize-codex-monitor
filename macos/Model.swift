@@ -1,6 +1,8 @@
 import Foundation
 import CSQLite
 
+enum MonitoringCadence { static let checkInterval: TimeInterval = 10 }
+
 struct TaskRow: Codable, Equatable {
     var id = "", title = "", project = "", state = "待确认", turn = ""
     var started: Date?, finished: Date?
@@ -206,11 +208,11 @@ final class Monitor {
     let store: Store, home: URL, wb: URL, desktop: URL, transcripts: URL
     var document: Document, settings: Settings
     var tracks = [String: Track](), health = [String: String](), initialized = Set<String>()
-    var notices = [TaskRow](), runtime = Runtime(), now = Date(), bytesRead = 0
+    var notices = [TaskRow](), runtime = Runtime(), now = Date(), bytesRead = 0, incrementalReads = 0
     var previousPlatforms = Set<String>()
     var runtimeAt = Date.distantPast
     var assignments = [String: String](), localProjects = [String: String]()
-    var lastDiscovery = Date.distantPast, paths = [URL](), titleStamp = Date.distantPast, titles = [String: String](), projectNames = [String: String]()
+    var lastDiscovery = Date.distantPast, paths = [URL](), projectStamp = Date.distantPast, titleStamp = Date.distantPast, titles = [String: String](), projectNames = [String: String]()
     init(home: URL, data: URL, wb: URL? = nil, desktop: URL? = nil, transcripts: URL? = nil) {
         self.home = home; store = Store(data); document = store.load("current-tasks.json", as: Document.self) ?? store.load("state.json", as: Document.self) ?? Document(); if let history = store.load("completion-history.json", as: [TaskRow].self) { document.history = history }; settings = store.load("settings.json", as: Settings.self) ?? Settings()
         let env = ProcessInfo.processInfo.environment, user = FileManager.default.homeDirectoryForCurrentUser
@@ -259,7 +261,7 @@ final class Monitor {
         return row
     }
     func poll(runtime: Runtime? = nil, date: Date = Date()) {
-        now = date; notices = []; if let runtime { self.runtime = runtime } else if now.timeIntervalSince(runtimeAt) >= 5 { self.runtime = Runtime.inspect(); runtimeAt = now }
+        now = date; notices = []; if let runtime { self.runtime = runtime } else if now.timeIntervalSince(runtimeAt) >= MonitoringCadence.checkInterval { self.runtime = Runtime.inspect(); runtimeAt = now }
         let selection = selectedPlatforms
         for platform in selection.symmetricDifference(previousPlatforms) {
             initialized.remove(platform); tracks = tracks.filter { $0.value.row.platform != platform }
@@ -297,9 +299,15 @@ final class Monitor {
             if let seed = t.seed, (t.row.started ?? .distantPast) < seed { t.row.started = seed; t.row.turn = "desktop-\(seed.timeIntervalSince1970)"; t.row.activity = seed; t.row.finished = nil; t.row.state = runtime.claude ? "运行中" : "待确认"; t.row.estimated = true }
         }
         let before = t.reader.offset
-        try t.reader.read(url, budget: t.row.platform == "claude" ? 262144 : 16 * 1024 * 1024) { data in
-            guard let o = object(data) else { return }
-            if t.row.platform == "claude" { _ = claudeEvent(o, cli: t.cli, &t.row) } else { _ = codexEvent(o, &t.row) }
+        if fresh || size > t.reader.offset {
+            incrementalReads += 1
+            try t.reader.read(url, budget: t.row.platform == "claude" ? 262144 : 16 * 1024 * 1024) { data in
+                guard let o = object(data) else { return }
+                if t.row.platform == "claude" { _ = claudeEvent(o, cli: t.cli, &t.row) } else { _ = codexEvent(o, &t.row) }
+                // Multiple turns may finish between checks. Preserve each successful
+                // round before the next start replaces its lifecycle in memory.
+                if !fresh, t.row.visible, t.row.state == "完成", !document.dismissed.contains(t.row.round) { record(t.row) }
+            }
         }
         bytesRead += Int(t.reader.offset - before)
         if t.row.platform == "codex", t.reader.offset > before, t.row.started != nil, t.row.finished == nil, !fresh { t.row.state = "运行中" }
@@ -314,14 +322,17 @@ final class Monitor {
     func pollCodex() {
         let initial = !initialized.contains("codex"), dir = home.appendingPathComponent("sessions")
         guard FileManager.default.fileExists(atPath: dir.path) else { unavailable("codex", "等待 Codex 本地会话"); return }
-        if now.timeIntervalSince(lastDiscovery) >= 10 || initial { paths = files(dir, ext: "jsonl"); lastDiscovery = now }
+        if now.timeIntervalSince(lastDiscovery) >= MonitoringCadence.checkInterval || initial { paths = files(dir, ext: "jsonl"); lastDiscovery = now }
         let indexURL = home.appendingPathComponent("session_index.jsonl")
         let stamp = (try? indexURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
         if stamp != titleStamp {
             titles = [:]; titleStamp = stamp
             if let data = try? Data(contentsOf: indexURL) { for line in data.split(separator: 10) { if let o = object(Data(line)), let id = o["id"] as? String { titles[id] = o["thread_name"] as? String } } }
         }
-        if let data = try? Data(contentsOf: home.appendingPathComponent(".codex-global-state.json")), let o = object(data) {
+        let projectURL = home.appendingPathComponent(".codex-global-state.json")
+        let projectModified = (try? projectURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+        if projectModified != projectStamp, let data = try? Data(contentsOf: projectURL), let o = object(data) {
+            projectStamp = projectModified
             projectNames = o["electron-workspace-root-labels"] as? [String: String] ?? [:]
             assignments = o["thread-project-assignments"] as? [String: String] ?? [:]; localProjects = [:]
             for (id, value) in o["local-projects"] as? [String: [String: Any]] ?? [:] { if let name = value["name"] as? String { localProjects[id] = name; for path in value["rootPaths"] as? [String] ?? [] { projectNames[path] = name } } }

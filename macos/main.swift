@@ -46,7 +46,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSLayoutConstraint.activate([tabs.topAnchor.constraint(equalTo: root.topAnchor, constant: 12), tabs.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12), tabs.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12), tabs.heightAnchor.constraint(equalToConstant: 30), scroll.topAnchor.constraint(equalTo: tabs.bottomAnchor, constant: 10), scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 8), scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -8), scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -38), stack.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor), footer.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16), footer.trailingAnchor.constraint(lessThanOrEqualTo: clear.leadingAnchor, constant: -8), footer.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -12), clear.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14), clear.centerYAnchor.constraint(equalTo: footer.centerYAnchor)])
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength); status.button?.title = "◉ AI"; status.button?.toolTip = settings.displayName; buildMenu()
         current = monitor.current; history = monitor.recent; render(); poll()
-        timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in self?.poll() }
+        timer = Timer.scheduledTimer(withTimeInterval: MonitoringCadence.checkInterval, repeats: true) { [weak self] _ in self?.poll() }
         clockTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in guard let self else { return }; for (field, row) in self.labels { field.stringValue = elapsed(row) } }
         show()
         if !settings.setupCompleted { configureApp() }
@@ -124,6 +124,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func render() {
         compactCount?.title = String(runningProjectCount(current))
         compact?.title = settings.displayName + " · 沉浸模式"
+        if settings.immersive { labels = []; return }
         tabs.setLabel("当前任务  \(current.count)", forSegment: 0); tabs.setLabel("最近完成  \(history.count)", forSegment: 1)
         footer.stringValue = "\(current.filter { $0.state == "运行中" }.count) 个运行中 · \(current.filter { $0.state == "完成" }.count) 个完成"; footer.toolTip = health
         let shown = recent ? history : current
