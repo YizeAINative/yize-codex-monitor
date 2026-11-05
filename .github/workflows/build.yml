@@ -1,0 +1,58 @@
+name: Build and test
+
+on:
+  push:
+    branches: [main, 'review/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build Windows app
+        shell: powershell
+        run: .\build.ps1
+      - name: Run core and WPF interaction checks
+        shell: powershell
+        run: |
+          .\dist\CoreTests.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Core checks failed' }
+          .\dist\UiTests.exe
+          if ($LASTEXITCODE -ne 0) { throw 'WPF checks failed' }
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run isolated Swift checks
+        run: bash macos/test.sh
+      - name: Build and verify app
+        run: |
+          bash macos/build.sh
+          codesign --verify --deep --strict "dist/Codex Monitor.app"
+          plutil -lint "dist/Codex Monitor.app/Contents/Info.plist"
+      - name: Package app
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "dist/Codex Monitor.app/Contents/Info.plist")
+          ditto -c -k --sequesterRsrc --keepParent "dist/Codex Monitor.app" "dist/Yize-AI-Agent-Monitor-${version}-macOS-$(uname -m).zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.runner }}
+          path: dist/*-macOS-*.zip
+          if-no-files-found: error
+          retention-days: 14
