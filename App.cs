@@ -20,7 +20,7 @@ using Forms = System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("一泽的 AI Agent 任务监控")]
 [assembly: System.Reflection.AssemblyProduct("CodexFloat")]
-[assembly: System.Reflection.AssemblyVersion("1.6.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.6.1.0")]
 namespace CodexFloat {
     static class Program {
         public static string DataDir,Home,WorkBuddyHome,ClaudeHome,CapturePath="",EvidenceDir="";public static bool Demo,DebugTaskbar,PreviewSettings,RenderOnly,InitialRecent;
@@ -166,7 +166,9 @@ namespace CodexFloat {
         void PositionWindow(){var area=SystemParameters.WorkArea;Left=settings.Left==-99999?area.Right-Width-24:settings.Left;Top=settings.Top==-99999?area.Top+60:settings.Top;
             bool reachable=Forms.Screen.AllScreens.Any(s=>{var src=PresentationSource.FromVisual(this);double scale=src!=null?src.CompositionTarget.TransformToDevice.M11:1;return s.WorkingArea.IntersectsWith(new System.Drawing.Rectangle((int)(Left*scale),(int)(Top*scale),(int)(Width*scale),70));});
             if(!reachable){Left=area.Right-Width-24;Top=area.Top+60;}}
-        void StartWorker(){Task.Run(async()=>{while(!cancel.IsCancellationRequested){try{engine.Poll();}catch(Exception ex){Program.Log("poll",ex);}try{await Task.Delay(800,cancel.Token);}catch(TaskCanceledException){break;}}});}
+        // Check immediately on startup, then read provider logs every 20 seconds.
+        // The separate UI timer keeps elapsed time and animations responsive.
+        void StartWorker(){Task.Run(async()=>{while(!cancel.IsCancellationRequested){try{engine.Poll();}catch(Exception ex){Program.Log("poll",ex);}try{await Task.Delay(TimeSpan.FromSeconds(20),cancel.Token);}catch(TaskCanceledException){break;}}});}
         void UpdatePin(){pin.Foreground=settings.AlwaysOnTop?Theme.Green:Theme.Muted;pin.ToolTip=settings.AlwaysOnTop?"已置顶 · 点击取消":"点击置顶";}
         void ToggleTopmost(){settings.AlwaysOnTop=!settings.AlwaysOnTop;Topmost=settings.AlwaysOnTop;UpdatePin();SaveSettings();}
         public void ShowWidget(){Show();WindowState=WindowState.Normal;PositionWindow();Activate();}
@@ -189,7 +191,7 @@ namespace CodexFloat {
             var test=new MenuItem{Header="测试完成提醒"};test.Click+=(o,e)=>OnCompleted(new List<Session>{new Session{Title="提醒已开启",Cwd="一泽的 AI Agent 任务监控",Status="completed"}});m.Items.Add(test);
             var reset=new MenuItem{Header="重置窗口位置"};reset.Click+=(o,e)=>{settings.Left=-99999;settings.Top=-99999;PositionWindow();SaveSettings();};m.Items.Add(reset);
             var startup=new MenuItem{Header="开机自动启动",IsCheckable=true,IsChecked=StartupEnabled()};startup.Click+=(o,e)=>SetStartup(startup.IsChecked);m.Items.Add(startup);
-            m.Items.Add(new Separator());var about=new MenuItem{Header="关于 / 使用说明"};about.Click+=(o,e)=>MessageBox.Show(this,"一泽的 AI Agent 任务监控 1.6.0\n\n支持 Codex / WorkBuddy / Claude 桌面端 Code，在菜单中勾选监控平台。\n新一轮开始会自动加入列表。\n绿色代表本轮结束，点击标题打开对应对话。\n中断不会标为完成；状态待确认时不会误报。\n完成记录在「最近完成」保留最近 200 条。\n当前和完成列表自动保存在本地，启动后重新检测。\n右键已完成会话可「加入完成」并单独移出当前。\n拖动顶部移动；右下角调整宽度。\n\n仅在本机读取会话元数据，无网络请求。\n配置与监控记录："+Program.DataDir+"\n\n项目：github.com/YizeAINative/yize-codex-monitor\n参考：github.com/LH-03/agent-monitor-hud", "关于一泽的 AI Agent 任务监控");m.Items.Add(about);
+            m.Items.Add(new Separator());var about=new MenuItem{Header="关于 / 使用说明"};about.Click+=(o,e)=>MessageBox.Show(this,"一泽的 AI Agent 任务监控 1.6.1\n\n支持 Codex / WorkBuddy / Claude 桌面端 Code，在菜单中勾选监控平台。\n新一轮开始会自动加入列表。\n绿色代表本轮结束，点击标题打开对应对话。\n中断不会标为完成；状态待确认时不会误报。\n完成记录在「最近完成」保留最近 200 条。\n当前和完成列表自动保存在本地，启动后重新检测。\n右键已完成会话可「加入完成」并单独移出当前。\n拖动顶部移动；右下角调整宽度。\n\n仅在本机读取会话元数据，无网络请求。\n配置与监控记录："+Program.DataDir+"\n\n项目：github.com/YizeAINative/yize-codex-monitor\n参考：github.com/LH-03/agent-monitor-hud", "关于一泽的 AI Agent 任务监控");m.Items.Add(about);
             var exit=new MenuItem{Header="退出软件"};exit.Click+=(o,e)=>Exit();m.Items.Add(exit);return m;}
         void AddCheck(ContextMenu m,string name,bool check,Action action){var item=new MenuItem{Header=name,IsCheckable=true,IsChecked=check};item.Click+=(o,e)=>action();m.Items.Add(item);}
         bool StartupEnabled(){using(var key=Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))return key!=null&&key.GetValue("CodexFloat")!=null;}
