@@ -125,40 +125,51 @@ namespace CodexFloat {
         public void Dispose(){lock(gate)Save();}
     }
     public class MonitoringHub:IDisposable {
-        readonly object gate=new object();readonly string codexHome,workbuddyHome,claudeHome,dataDir;
+        readonly object gate=new object();readonly string codexHome,workbuddyHome,claudeHome,antigravityHome,dataDir;
         Engine codex;WorkBuddyEngine workbuddy;ClaudeEngine claude;bool enableCodex,enableWorkBuddy,enableClaude;readonly CompletionHistory history;readonly CurrentTasks current;
+        AntigravityEngine antigravity;
+        bool enableAntigravity;
         readonly Func<string,bool> runtimeCheck;readonly Dictionary<string,bool> runtimes=new Dictionary<string,bool>();DateTime runtimeChecked;
         public event Action<List<Session>> Completed;
-        public MonitoringHub(string ch,string wh,string data,bool c,bool w,string cl=null,bool cc=false,Func<string,bool> runtimeCheck=null){codexHome=ch;workbuddyHome=wh;claudeHome=cl??ClaudeDesktopSource.DefaultHome();dataDir=data;enableCodex=c;enableWorkBuddy=w;enableClaude=cc;history=new CompletionHistory(data);current=new CurrentTasks(data);this.runtimeCheck=runtimeCheck??CurrentTaskIdentity.RuntimeRunning;}
-        public void Configure(bool c,bool w,bool cc=false){lock(gate){enableCodex=c;enableWorkBuddy=w;enableClaude=cc;if(!c&&codex!=null){codex.Dispose();codex=null;}if(!w&&workbuddy!=null){workbuddy.Dispose();workbuddy=null;}if(!cc&&claude!=null){claude.Dispose();claude=null;}}}
-        public string Health { get {lock(gate){var names=new List<string>();if(enableCodex)names.Add("Codex");if(enableWorkBuddy)names.Add("WorkBuddy");if(enableClaude)names.Add("Claude 桌面端 Code");if(names.Count==0)return "请在设置里勾选监控平台";if(names.Count>1)return string.Join(" / ",names)+" 自动监控";if(enableCodex)return codex==null?"正在连接 Codex…":codex.Health;if(enableWorkBuddy)return workbuddy==null?"正在连接 WorkBuddy…":workbuddy.Health;return claude==null?"正在连接 Claude 桌面端 Code…":claude.Health;}} }
+        public MonitoringHub(string ch,string wh,string data,bool c,bool w,string cl=null,bool cc=false,Func<string,bool> runtimeCheck=null,string ag=null,bool aa=false){codexHome=ch;workbuddyHome=wh;claudeHome=cl??ClaudeDesktopSource.DefaultHome();antigravityHome=ag??AntigravitySource.DefaultHome();dataDir=data;enableCodex=c;enableWorkBuddy=w;enableClaude=cc;enableAntigravity=aa;history=new CompletionHistory(data);current=new CurrentTasks(data);this.runtimeCheck=runtimeCheck??CurrentTaskIdentity.RuntimeRunning;}
+        public void Configure(bool c,bool w,bool cc=false,bool aa=false){lock(gate){enableCodex=c;enableWorkBuddy=w;enableClaude=cc;enableAntigravity=aa;if(!c&&codex!=null){codex.Dispose();codex=null;}if(!w&&workbuddy!=null){workbuddy.Dispose();workbuddy=null;}if(!cc&&claude!=null){claude.Dispose();claude=null;}if(!aa)antigravity=null;}}
+        public string Health { get {lock(gate){var names=new List<string>();if(enableCodex)names.Add("Codex");if(enableWorkBuddy)names.Add("WorkBuddy");if(enableClaude)names.Add("Claude 桌面端 Code");if(enableAntigravity)names.Add("Antigravity");if(names.Count==0)return "请在设置里勾选监控平台";if(names.Count>1)return string.Join(" / ",names)+" 自动监控";if(enableCodex)return codex==null?"正在连接 Codex…":codex.Health;if(enableWorkBuddy)return workbuddy==null?"正在连接 WorkBuddy…":workbuddy.Health;if(enableClaude)return claude==null?"正在连接 Claude 桌面端 Code…":claude.Health;return antigravity==null?"正在连接 Antigravity…":antigravity.Health;}} }
         public void Poll(){lock(gate){
             if(enableCodex){if(codex==null){codex=new Engine(codexHome,dataDir);codex.Poll();codex.Completed+=Forward;}else codex.Poll();}
             if(enableWorkBuddy){if(workbuddy==null){workbuddy=new WorkBuddyEngine(workbuddyHome,dataDir);workbuddy.Poll();workbuddy.Completed+=Forward;}else workbuddy.Poll();}
             if(enableClaude){if(claude==null){claude=new ClaudeEngine(claudeHome,dataDir);claude.Poll();claude.Completed+=Forward;}else claude.Poll();}
+            if(enableAntigravity){
+                if(antigravity==null)antigravity=new AntigravityEngine(antigravityHome,current.Snapshot(p=>p==AntigravitySource.Platform));
+                var notices=antigravity.Poll(RuntimeRunning(AntigravitySource.Platform),DateTime.UtcNow);
+                if(notices.Count>0)Forward(notices);
+            }
             current.Reconcile(SourceSnapshot(),Enabled,ConfirmActive);RememberCompletions();history.Flush();
         }}
-        bool Enabled(string platform){return platform=="claude"?enableClaude:platform=="workbuddy"?enableWorkBuddy:enableCodex;}
+        bool Enabled(string platform){return platform==AntigravitySource.Platform?enableAntigravity:platform=="claude"?enableClaude:platform=="workbuddy"?enableWorkBuddy:enableCodex;}
         bool ConfirmActive(Session s){
+            if(s.Platform==AntigravitySource.Platform)return antigravity!=null&&antigravity.Available;
             bool available=s.Platform=="claude"?claude!=null&&claude.Available:s.Platform=="workbuddy"?workbuddy!=null&&workbuddy.Available:codex!=null&&codex.Available;
             if(!available||(!string.IsNullOrEmpty(s.FilePath)&&!File.Exists(s.FilePath)))return false;
+            return RuntimeRunning(s.Platform);
+        }
+        bool RuntimeRunning(string platform){
             if((DateTime.UtcNow-runtimeChecked).TotalSeconds>=5){runtimes.Clear();runtimeChecked=DateTime.UtcNow;}
-            bool live;if(!runtimes.TryGetValue(s.Platform,out live)){try{live=runtimeCheck(s.Platform);}catch{live=false;}runtimes[s.Platform]=live;}return live;
+            bool live;if(!runtimes.TryGetValue(platform,out live)){try{live=runtimeCheck(platform);}catch{live=false;}runtimes[platform]=live;}return live;
         }
         void Forward(List<Session> items){history.Record(items);var notify=items.Where(s=>!current.IsDismissed(s)).ToList();if(notify.Count>0&&Completed!=null)Completed(notify);}
-        void RememberCompletions(){if(codex!=null)history.Record(codex.CompletedSnapshot());if(workbuddy!=null)history.Record(workbuddy.CompletedSnapshot());if(claude!=null)history.Record(claude.CompletedSnapshot());}
+        void RememberCompletions(){if(codex!=null)history.Record(codex.CompletedSnapshot());if(workbuddy!=null)history.Record(workbuddy.CompletedSnapshot());if(claude!=null)history.Record(claude.CompletedSnapshot());if(antigravity!=null)history.Record(antigravity.Snapshot);}
         public List<Session> RecentCompleted(){return history.LatestSnapshot();}
         public string HistoryError {get{return history.Error;}}
         public string CurrentError {get{return current.Error;}}
         public bool Rechecking {get{return !current.Checked;}}
-        List<Session> SourceSnapshot(){var list=new List<Session>();if(enableCodex&&codex!=null)list.AddRange(codex.Snapshot());if(enableWorkBuddy&&workbuddy!=null)list.AddRange(workbuddy.Snapshot());if(enableClaude&&claude!=null)list.AddRange(claude.Snapshot());return list;}
+        List<Session> SourceSnapshot(){var list=new List<Session>();if(enableCodex&&codex!=null)list.AddRange(codex.Snapshot());if(enableWorkBuddy&&workbuddy!=null)list.AddRange(workbuddy.Snapshot());if(enableClaude&&claude!=null)list.AddRange(claude.Snapshot());if(antigravity!=null)list.AddRange(antigravity.Snapshot);return list;}
         public List<Session> Snapshot(){lock(gate)return current.Snapshot(Enabled);}
         public void ClearFinished(){lock(gate){RememberCompletions();var ended=current.Snapshot(Enabled).Where(s=>s.Terminal).ToList();history.Record(ended);if(history.Error!="")return;foreach(var s in ended)Dismiss(s);}}
         public bool ArchiveCompleted(Session requested){lock(gate){
             var actual=current.Snapshot(Enabled).FirstOrDefault(s=>s.Key==requested.Key);if(actual==null||actual.Status!="completed"||!CurrentTaskIdentity.SameRound(actual,requested))return false;
             history.Record(new[]{actual});if(history.Error!="")return false;Dismiss(actual);return true;
         }}
-        public void Dismiss(Session s){lock(gate){history.Record(new[]{s});if(s.Status=="completed"&&history.Error!="")return;if(!current.Remove(s))return;if(s.Platform=="claude"){if(claude!=null)claude.Dismiss(s.Id);}else if(s.Platform=="workbuddy"){if(workbuddy!=null)workbuddy.Dismiss(s.Id);}else if(codex!=null)codex.Dismiss(s.Id);}}
+        public void Dismiss(Session s){lock(gate){history.Record(new[]{s});if(s.Status=="completed"&&history.Error!="")return;if(!current.Remove(s))return;if(s.Platform=="claude"){if(claude!=null)claude.Dismiss(s.Id);}else if(s.Platform=="workbuddy"){if(workbuddy!=null)workbuddy.Dismiss(s.Id);}else if(s.Platform=="codex"&&codex!=null)codex.Dismiss(s.Id);}}
         public void Dispose(){lock(gate){RememberCompletions();current.Flush();history.Flush();if(codex!=null)codex.Dispose();if(workbuddy!=null)workbuddy.Dispose();if(claude!=null)claude.Dispose();}}
     }
 }

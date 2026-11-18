@@ -29,7 +29,7 @@ namespace CodexFloat {
         static bool Valid(Session s){
             if(s==null||s.Status!="completed"||s.IsChild||s.FinishedAt==DateTime.MinValue)return false;
             if(s.Platform=="claude")return ClaudeDesktopSource.ValidId(s.Id);
-            Guid id;return (s.Platform=="codex"||s.Platform=="workbuddy")&&Guid.TryParseExact(s.Id,"D",out id);
+            Guid id;return (s.Platform=="codex"||s.Platform=="workbuddy"||s.Platform==AntigravitySource.Platform)&&Guid.TryParseExact(s.Id,"D",out id);
         }
         static bool SameRound(Session a,Session b){
             if(a.Key!=b.Key)return false;

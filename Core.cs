@@ -31,7 +31,7 @@ namespace CodexFloat {
         public bool Visible, HasLifecycle, IsChild, TimerEstimated;
         public Session Copy() { return (Session)MemberwiseClone(); }
         public string Key { get { return (Platform ?? "codex") + ":" + Id; } }
-        public string PlatformName { get { return Platform == "workbuddy" ? "WorkBuddy" : Platform == "claude" ? "Claude 桌面端 Code" : "Codex"; } }
+        public string PlatformName { get { return Platform == AntigravitySource.Platform ? "Antigravity" : Platform == "workbuddy" ? "WorkBuddy" : Platform == "claude" ? "Claude 桌面端 Code" : "Codex"; } }
         public string RuntimeText(DateTime now){
             if(StartedAt==DateTime.MinValue)return "--:--";
             DateTime end=FinishedAt!=DateTime.MinValue?FinishedAt:(Status=="unknown"&&LastActivity!=DateTime.MinValue?LastActivity:now);
@@ -159,7 +159,7 @@ namespace CodexFloat {
 
     public class Settings {
         public List<string> CollapsedRecentFolders=new List<string>();
-        public bool MonitorCodex=true, MonitorWorkBuddy=true, MonitorClaude=true;
+        public bool MonitorCodex=true, MonitorWorkBuddy=true, MonitorClaude=true, MonitorAntigravity=true;
         public bool Sound=true, Notifications=true, AlwaysOnTop=true;
         public double Left=-99999,Top=-99999,Width=400;
     }

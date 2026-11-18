@@ -1,24 +1,28 @@
 # 一泽的 AI Agent 任务监控
 
-独立的 Windows / macOS 悬浮小软件。支持 **Codex / WorkBuddy / Claude 桌面端 Code**，可选择监控平台；以项目分组展示当前对话，开始执行自动加入，运行中转圈并实时计时，本轮完成变绿并提醒，点击标题打开对应平台的对话。
+独立的 Windows / macOS 悬浮小软件。支持 **Codex / WorkBuddy / Claude 桌面端 Code**，Windows 版还支持 **Antigravity**。可选择监控平台，按项目查看任务状态、运行时间和完成记录。
 
-## 最新版本 · v1.7.0（2026-11-05）
+## 下载
+
+| 系统 | 版本与下载 |
+| --- | --- |
+| Windows | [v1.7.1 便携包](https://github.com/YizeAINative/yize-codex-monitor/releases/download/v1.7.1/Yize-AI-Agent-Monitor-1.7.1.zip)，解压后运行 `CodexFloat.exe`。 |
+| Mac · Apple Silicon | [v1.7.0 Apple Silicon 版](https://github.com/YizeAINative/yize-codex-monitor/releases/download/v1.7.0/Yize-AI-Agent-Monitor-1.7.0-macOS-arm64.zip)，解压后运行 `Codex Monitor.app`。 |
+| Mac · Intel | [v1.7.0 Intel Mac 版](https://github.com/YizeAINative/yize-codex-monitor/releases/download/v1.7.0/Yize-AI-Agent-Monitor-1.7.0-macOS-x86_64.zip)，解压后运行 `Codex Monitor.app`。 |
+
+Mac 需要 macOS 13+，使用临时签名，尚未进行 Developer ID 公证。操作和构建方法见 [Mac 使用说明](macos/README.md)。以下界面说明以 Windows 版为主。
+
+## v1.7.1 · Windows 新增 Antigravity（2026-11-18）
+
+Antigravity 默认开启，可在右上角「⋯ → 监控平台」切换。程序每 10 秒只读检查 `%USERPROFILE%\.gemini\antigravity` 中的会话摘要及末尾步骤状态，显示运行中、等待输入和最近完成。可通过 `ANTIGRAVITY_HOME` 或 `--antigravity-home` 指定数据目录。点击任务打开 Antigravity 主窗口，完成时间按会话摘要的最近更新时间估算。
+
+## v1.7.0 · 新增 macOS 原生版（2026-11-05）
 
 - 纳入 [blossom013 贡献的 macOS 原生版本（PR #1）](https://github.com/YizeAINative/yize-codex-monitor/pull/1)，支持首次配置、自动识别 Agent、沉浸模式和菜单栏入口。
 - Windows 和 macOS 统一为 **每 10 秒检查本地日志及平台状态**，启动时立即检查；界面计时仍每秒刷新。
 - 修正 Mac 版 WorkBuddy 重启恢复计时、Claude 日志积压时的中间完成误报及日志不可读时的状态。
 - Mac 日志未变化时跳过增量读取；两次检查之间已结束的轮次仍保留完成历史，当前列表显示最新轮次。
 - 加入 Windows、Apple Silicon 和 Intel Mac 的自动构建与测试。
-
-从 [v1.7.0 发布页](https://github.com/YizeAINative/yize-codex-monitor/releases/tag/v1.7.0) 下载对应系统的便携包，或查看 [所有版本](https://github.com/YizeAINative/yize-codex-monitor/releases)。
-
-| 系统 | 下载与运行 |
-| --- | --- |
-| Windows | `Yize-AI-Agent-Monitor-1.7.0.zip`，解压后运行 `CodexFloat.exe`。 |
-| Mac · Apple Silicon | `Yize-AI-Agent-Monitor-1.7.0-macOS-arm64.zip`，解压后运行 `Codex Monitor.app`。 |
-| Mac · Intel | `Yize-AI-Agent-Monitor-1.7.0-macOS-x86_64.zip`，解压后运行 `Codex Monitor.app`。 |
-
-Mac 需要 macOS 13+，使用临时签名，尚未进行 Developer ID 公证；功能、构建方法及验证范围见 [Mac 使用说明](macos/README.md)。以下界面说明以 Windows 版为主，Mac 保留原生窗口和菜单栏交互。
 
 顶部提供 **当前任务 / 最近完成** 两个标签页。完成记录独立保存最近 200 条，清除当前列表、继续提问、取消平台勾选或重启软件，都不会删除已保存的完成记录。
 
@@ -28,7 +32,7 @@ Mac 需要 macOS 13+，使用临时签名，尚未进行 Developer ID 公证；�
 
 不同平台使用独立的浅色圆角分区，平台名只在区域左上角显示一次；区域内保留简洁的项目与对话列表。
 
-Codex 使用浅绿色，WorkBuddy 使用浅蓝色，Claude Code 使用浅橙色。任务行与悬停底色保持所属平台的色系，绿色完成标记保留。
+Codex 使用浅绿色，WorkBuddy 使用浅蓝色，Claude Code 使用浅橙色，Antigravity 使用浅紫色。任务行与悬停底色保持所属平台的色系，完成标记使用绿色。
 
 ![界面示意，使用固定示例数据](docs/platform-preview.png)
 
@@ -46,9 +50,9 @@ Codex 使用浅绿色，WorkBuddy 使用浅蓝色，Claude Code 使用浅橙色�
 - **最近完成**：按平台分区，同一文件夹只显示一个可折叠标题，组内按完成时间倒序排列。每个会话只显示最新一次完成，后续完成会更新这条记录。不同会话即使名称相同也分别显示。每条记录显示 `MM-dd HH:mm` 格式的完成时间、本轮用时和对话标题，点击可打开对应对话。
 - **已中断**：明确显示中断，不发送完成提醒。
 - **待确认**：缺少明确结束事件且无法确认仍有写入进程，不误标完成。
-- **点击标题**：Codex / WorkBuddy 通过应用链接打开对应对话；Claude 桌面端 Code 通过 `claude://claude.ai/epitaxy/local_<ID>` 打开桌面端对应会话，不启动命令行。
+- **点击标题**：Codex、WorkBuddy 和 Claude 桌面端 Code 打开对应会话，Antigravity 打开主窗口。
 - **拖动顶部**：按住顶部标题栏的空白区域或名称都可以移动窗口；置顶、设置、收起按钮仍正常点击。右下角可调整宽度。
-- **右上角三个点**：勾选 Codex / WorkBuddy / Claude Code，以及置顶、声音、弹出提醒、测试提醒、重置位置、开机启动、退出。取消平台勾选后停止该平台读取、隐藏其条目并停止提醒；重新勾选不补播暂停期间的完成通知。
+- **右上角三个点**：选择监控平台，设置置顶、声音、弹出提醒、窗口位置和开机启动。取消平台勾选后停止该平台读取、隐藏其条目并停止提醒；重新勾选不补播暂停期间的完成通知。
 - **右上角减号**：收起到系统托盘。双击托盘图标或再次启动 EXE 即可找回。
 - **清除完成**：只移出当前任务列表中已结束的行；成功完成的记录继续保留在「最近完成」，不会删除平台的聊天或文件。
 - **单独加入完成**：在「当前任务」中右键已完成的会话名称，选择「加入完成」，会保存到最近完成并只移出这一条。运行中、等待中或尚未确认完成的任务不会被此操作标记为成功。单条移出状态会保存，重启不重复出现；新一轮提问仍会自动重新加入。

@@ -14,6 +14,66 @@ namespace CodexFloat {
         static MonitoringHub Hub(string ch,string wh,string data,bool c,bool w,string cl=null,bool cc=false){return new MonitoringHub(ch,wh,data,c,w,cl,cc,platform=>true);}
         static long Stamp(){return (long)(DateTime.UtcNow-new DateTime(1970,1,1,0,0,0,DateTimeKind.Utc)).TotalMilliseconds;}
         static Session Finished(string id,string turn,DateTime at,string platform="codex"){return new Session{Id=id,TurnId=turn,Platform=platform,Title="Completed fixture",Cwd=@"C:\Projects\fixture",Status="completed",Visible=true,StartedAt=at.AddMinutes(-3),FinishedAt=at,FilePath="private-source-path"};}
+        static void AntigravityChecks() {
+            string source = Path.Combine(root, "antigravity"), state = Path.Combine(root, "antigravity-state");
+            string summaries = Path.Combine(source, "conversation_summaries.db");
+            string conversations = Path.Combine(source, "conversations");
+            Directory.CreateDirectory(conversations);
+            string id = "aaaaaaaa-3456-4123-8123-111111111111";
+            string trajectory = Path.Combine(conversations, id + ".db");
+            string schema = "CREATE TABLE conversation_summaries(conversation_id TEXT PRIMARY KEY,title TEXT,workspace_uris TEXT," +
+                "status TEXT,not_fully_idle INT,killed INT,last_modified_time TEXT,last_user_input_time TEXT," +
+                "last_user_input_step_index INT,parent_conversation_id TEXT,nesting_depth INT);";
+            Db(summaries, schema +
+                "INSERT INTO conversation_summaries VALUES('" + id + "','Antigravity fixture','[\"file:///D:/Agent%20Projects/demo\"]'," +
+                "'CASCADE_RUN_STATUS_RUNNING',1,0,'2026-11-18 03:00:01.1234567+00:00','2026-11-18 03:00:00.1234567+00:00',0,'',0);" +
+                "INSERT INTO conversation_summaries VALUES('bbbbbbbb-3456-4123-8123-111111111111','Child','','CASCADE_RUN_STATUS_RUNNING',1,0," +
+                "'2026-11-18 03:00:01+00:00','2026-11-18 03:00:00+00:00',0,'" + id + "',1);");
+            Db(trajectory, "CREATE TABLE steps(idx INTEGER PRIMARY KEY,step_type INT,status INT); INSERT INTO steps VALUES(0,14,3),(1,15,2);");
+
+            using (var hub = new MonitoringHub(source,source,state,false,false,runtimeCheck:p=>true,ag:source,aa:true)) {
+                int notifications = 0;
+                hub.Completed += items => notifications += items.Count;
+                hub.Poll();
+                var active = hub.Snapshot().Single();
+                Check(active.Status=="running" && active.PlatformName=="Antigravity" && active.Group=="demo" && notifications==0,
+                    "Antigravity discovers active conversation with workspace and excludes child rows");
+                Db(trajectory, "UPDATE steps SET status=3 WHERE idx=1; INSERT INTO steps VALUES(2,138,9);");
+                hub.Poll();
+                Check(hub.Snapshot().Single().Status=="waiting" && notifications==0, "Antigravity detects pending user input");
+
+                Db(trajectory, "UPDATE steps SET status=3 WHERE idx=2; INSERT INTO steps VALUES(3,15,3);");
+                Db(summaries, "UPDATE conversation_summaries SET status='CASCADE_RUN_STATUS_IDLE',not_fully_idle=0," +
+                    "last_modified_time='2026-11-18 03:01:00.1234567+00:00' WHERE nesting_depth=0;");
+                hub.Poll();
+                hub.Poll();
+                var completed = hub.Snapshot().Single();
+                Check(completed.Status=="completed" && completed.RuntimeText(DateTime.UtcNow)=="≈01:00" &&
+                    hub.RecentCompleted().Single().TurnId==completed.TurnId && notifications==1,
+                    "Antigravity freezes timer, persists history and sends one completion notification");
+                Check(hub.ArchiveCompleted(completed) && hub.Snapshot().Count==0, "Antigravity archives a single completed conversation");
+            }
+
+            using (var hub = new MonitoringHub(source,source,state,false,false,runtimeCheck:p=>true,ag:source,aa:true)) {
+                int notifications = 0;
+                hub.Completed += items => notifications += items.Count;
+                hub.Poll();
+                Check(hub.Snapshot().Count==0 && hub.RecentCompleted().Count==1 && notifications==0,
+                    "Antigravity restore retains history without replaying archived conversations");
+                Db(summaries, "UPDATE conversation_summaries SET status='CASCADE_RUN_STATUS_BUSY',not_fully_idle=1," +
+                    "last_user_input_time='2026-11-18 03:02:00.1234567+00:00',last_user_input_step_index=4 WHERE nesting_depth=0;");
+                Db(trajectory, "INSERT INTO steps VALUES(4,14,3),(5,15,2);");
+                hub.Poll();
+                Check(hub.Snapshot().Single().Status=="running", "Antigravity follow-up returns an archived conversation to current");
+                Db(trajectory, "UPDATE steps SET status=12 WHERE idx=5;");
+                Db(summaries, "UPDATE conversation_summaries SET status='CASCADE_RUN_STATUS_IDLE',not_fully_idle=0 WHERE nesting_depth=0;");
+                hub.Poll();
+                Check(hub.Snapshot().Single().Status=="interrupted" && notifications==0 && hub.RecentCompleted().Count==1,
+                    "Antigravity interruption does not overwrite completion history or send a completion alert");
+                hub.Configure(false,false,false,false);
+                Check(hub.Snapshot().Count==0 && hub.RecentCompleted().Count==1, "Antigravity toggle hides current tasks and keeps history");
+            }
+        }
         static void CurrentChecks(){
             string id="11111111-aaaa-4111-8111-111111111111",otherId="22222222-aaaa-4222-8222-222222222222";DateTime now=DateTime.UtcNow;string data=Path.Combine(root,"current-cache");
             var active=Finished(id,"t1",now);active.Status="running";active.FinishedAt=DateTime.MinValue;var other=Finished(otherId,"other",now);
@@ -234,7 +294,7 @@ namespace CodexFloat {
                 Append(repeatFile,Event("task_complete","t3")+"\n");engine.Poll();Check(repeatNotices==3,"third round alerts after restart");
             }
             var partial=Rollout.Identity(p3);Append(p3,"{\"type\":");long offset=Rollout.Hydrate(partial);Check(partial.Status=="completed"&&offset<new FileInfo(p3).Length,"hydration ignores partial trailing JSON");
-            WorkBuddyChecks();ClaudeChecks();ClaudeDesktopChecks();HistoryChecks();CurrentChecks();Console.WriteLine("ALL "+passed+" CHECKS PASSED\nFixtures: "+root);return 0;
+            WorkBuddyChecks();ClaudeChecks();ClaudeDesktopChecks();HistoryChecks();CurrentChecks();AntigravityChecks();Console.WriteLine("ALL "+passed+" CHECKS PASSED\nFixtures: "+root);return 0;
         }catch(Exception ex){Console.Error.WriteLine(ex);return 1;}}
     }
 }

@@ -25,7 +25,7 @@ namespace CodexFloat {
         }
         public static bool RuntimeRunning(string platform){
             if(platform=="claude")return ClaudeDesktopSource.RuntimeRunning();
-            var processes=Process.GetProcessesByName(platform=="workbuddy"?"WorkBuddy":"codex");bool live=processes.Length>0;foreach(var p in processes)p.Dispose();return live;
+            var processes=Process.GetProcessesByName(platform==AntigravitySource.Platform?"Antigravity":platform=="workbuddy"?"WorkBuddy":"codex");bool live=processes.Length>0;foreach(var p in processes)p.Dispose();return live;
         }
     }
     // A cross-platform list survives application/PC restarts even while provider
