@@ -20,7 +20,7 @@ using Forms = System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("一泽的 AI Agent 任务监控")]
 [assembly: System.Reflection.AssemblyProduct("CodexFloat")]
-[assembly: System.Reflection.AssemblyVersion("1.7.1.0")]
+[assembly: System.Reflection.AssemblyVersion("1.7.2.0")]
 namespace CodexFloat {
     static class Program {
         public static string DataDir,Home,WorkBuddyHome,ClaudeHome,AntigravityHome,CapturePath="",EvidenceDir="";public static bool Demo,DebugTaskbar,PreviewSettings,RenderOnly,InitialRecent;
@@ -58,11 +58,56 @@ namespace CodexFloat {
             var t=new ControlTemplate(typeof(Button));var frame=new FrameworkElementFactory(typeof(Border));frame.SetValue(Border.CornerRadiusProperty,new CornerRadius(5));frame.SetValue(Border.BackgroundProperty,new TemplateBindingExtension(System.Windows.Controls.Button.BackgroundProperty));var content=new FrameworkElementFactory(typeof(ContentPresenter));content.SetValue(ContentPresenter.HorizontalAlignmentProperty,HorizontalAlignment.Center);content.SetValue(ContentPresenter.VerticalAlignmentProperty,VerticalAlignment.Center);frame.AppendChild(content);t.VisualTree=frame;b.Template=t;
             b.MouseEnter+=(o,e)=>b.Background=B("#EBEEE7");b.MouseLeave+=(o,e)=>b.Background=Brushes.Transparent;return b;}
         public static ToggleButton Tab(string text){
-            var tab=new ToggleButton{Content=text,Height=29,FontSize=11.5,Cursor=Cursors.Hand,Margin=new Thickness(1)};var style=new Style(typeof(ToggleButton));style.Setters.Add(new Setter(ToggleButton.ForegroundProperty,Muted));tab.Style=style;
+            var tab=new ToggleButton{Content=text,Height=29,FontSize=11.5,Cursor=Cursors.Hand,Margin=new Thickness(1),Padding=new Thickness(0)};var style=new Style(typeof(ToggleButton));style.Setters.Add(new Setter(ToggleButton.ForegroundProperty,Muted));tab.Style=style;
             var template=new ControlTemplate(typeof(ToggleButton));var border=new FrameworkElementFactory(typeof(Border),"TabFrame");border.SetValue(Border.CornerRadiusProperty,new CornerRadius(6));border.SetValue(Border.BackgroundProperty,Brushes.Transparent);border.SetValue(Border.BorderBrushProperty,Brushes.Transparent);border.SetValue(Border.BorderThicknessProperty,new Thickness(1));
-            var content=new FrameworkElementFactory(typeof(ContentPresenter));content.SetValue(ContentPresenter.HorizontalAlignmentProperty,HorizontalAlignment.Center);content.SetValue(ContentPresenter.VerticalAlignmentProperty,VerticalAlignment.Center);border.AppendChild(content);template.VisualTree=border;
+            var content=new FrameworkElementFactory(typeof(ContentPresenter));content.SetValue(ContentPresenter.HorizontalAlignmentProperty,HorizontalAlignment.Center);content.SetValue(ContentPresenter.VerticalAlignmentProperty,VerticalAlignment.Center);content.SetValue(ContentPresenter.MarginProperty,new TemplateBindingExtension(Control.PaddingProperty));border.AppendChild(content);template.VisualTree=border;
             var hover=new Trigger{Property=ToggleButton.IsMouseOverProperty,Value=true};hover.Setters.Add(new Setter(Border.BackgroundProperty,B("#EFF2EB"),"TabFrame"));template.Triggers.Add(hover);
-            var selected=new Trigger{Property=ToggleButton.IsCheckedProperty,Value=true};selected.Setters.Add(new Setter(Border.BackgroundProperty,B("#FBFCF9"),"TabFrame"));selected.Setters.Add(new Setter(Border.BorderBrushProperty,B("#DCE4D5"),"TabFrame"));selected.Setters.Add(new Setter(ToggleButton.ForegroundProperty,Green));selected.Setters.Add(new Setter(ToggleButton.FontWeightProperty,FontWeights.SemiBold));template.Triggers.Add(selected);tab.Template=template;return tab;
+            var selected=new Trigger{Property=ToggleButton.IsCheckedProperty,Value=true};selected.Setters.Add(new Setter(Border.BackgroundProperty,B("#FBFCF9"),"TabFrame"));selected.Setters.Add(new Setter(Border.BorderBrushProperty,B("#DCE4D5"),"TabFrame"));selected.Setters.Add(new Setter(ToggleButton.ForegroundProperty,Green));selected.Setters.Add(new Setter(ToggleButton.FontWeightProperty,FontWeights.SemiBold));template.Triggers.Add(selected);
+            var focus=new Trigger{Property=ToggleButton.IsKeyboardFocusedProperty,Value=true};focus.Setters.Add(new Setter(Border.BorderBrushProperty,B("#879B81"),"TabFrame"));template.Triggers.Add(focus);
+            tab.Template=template;return tab;
+        }
+        public static ToggleButton PlatformFilter(string label,string platform){
+            string surface="#EFF1EB",line="#DFE4D9",hover="#E3E9DE",accent="#3D654C";
+            switch(platform){
+                case "codex": surface="#EAF1E4";line="#DCE7D4";hover="#DFEAD8";accent="#466641";break;
+                case "claude": surface="#FAEFDF";line="#F0E0CB";hover="#F7E6D0";accent="#875624";break;
+                case "workbuddy": surface="#E9F1F7";line="#DCE7F1";hover="#DCEAF5";accent="#3D617F";break;
+                case AntigravitySource.Platform: surface="#F0EBF8";line="#E7DDF4";hover="#E9DFF5";accent="#665186";break;
+            }
+            var button=new ToggleButton{
+                Content=label,Height=26,FontSize=10.5,FontWeight=FontWeights.Medium,
+                Cursor=Cursors.Hand,Padding=new Thickness(4,0,4,0),Margin=new Thickness(1.5,0,1.5,3)
+            };
+            var accentBrush=B(accent);
+            var style=new Style(typeof(ToggleButton));style.Setters.Add(new Setter(ToggleButton.ForegroundProperty,accentBrush));
+            button.Style=style;
+
+            var frame=new FrameworkElementFactory(typeof(Border),"Chip");
+            frame.SetValue(Border.CornerRadiusProperty,new CornerRadius(7));
+            frame.SetValue(Border.BackgroundProperty,B(surface));
+            frame.SetValue(Border.BorderBrushProperty,B(line));
+            frame.SetValue(Border.BorderThicknessProperty,new Thickness(1));
+            frame.SetValue(Border.PaddingProperty,new TemplateBindingExtension(Control.PaddingProperty));
+            var content=new FrameworkElementFactory(typeof(ContentPresenter));
+            content.SetValue(ContentPresenter.HorizontalAlignmentProperty,HorizontalAlignment.Center);
+            content.SetValue(ContentPresenter.VerticalAlignmentProperty,VerticalAlignment.Center);
+            frame.AppendChild(content);
+
+            var template=new ControlTemplate(typeof(ToggleButton)){VisualTree=frame};
+            var hovered=new Trigger{Property=ToggleButton.IsMouseOverProperty,Value=true};
+            hovered.Setters.Add(new Setter(Border.BackgroundProperty,B(hover),"Chip"));
+            hovered.Setters.Add(new Setter(Border.BorderBrushProperty,accentBrush,"Chip"));
+            template.Triggers.Add(hovered);
+            var selected=new Trigger{Property=ToggleButton.IsCheckedProperty,Value=true};
+            selected.Setters.Add(new Setter(Border.BackgroundProperty,accentBrush,"Chip"));
+            selected.Setters.Add(new Setter(Border.BorderBrushProperty,accentBrush,"Chip"));
+            selected.Setters.Add(new Setter(ToggleButton.ForegroundProperty,Brushes.White));
+            template.Triggers.Add(selected);
+            var pressed=new Trigger{Property=ToggleButton.IsPressedProperty,Value=true};
+            pressed.Setters.Add(new Setter(Border.OpacityProperty,.78,"Chip"));
+            template.Triggers.Add(pressed);
+            button.Template=template;
+            return button;
         }
         public static ContextMenu Menu(){
             var menu=new ContextMenu{Width=228,Background=Background,Foreground=Ink,FontFamily=new FontFamily("Microsoft YaHei UI, Segoe UI"),FontSize=12,Padding=new Thickness(6),HasDropShadow=false};
@@ -108,6 +153,9 @@ namespace CodexFloat {
         readonly StackPanel list=new StackPanel();readonly TextBlock summary=Theme.Text("正在连接…",11,Theme.Muted);
         readonly ScrollViewer scroll=new ScrollViewer();readonly Border shell;readonly Button pin,clear;
         readonly ToggleButton currentTab,recentTab;
+        readonly WrapPanel platformFilterBar=new WrapPanel{Margin=new Thickness(9,0,9,5)};
+        readonly Dictionary<string,ToggleButton> platformFilters=new Dictionary<string,ToggleButton>();
+        string selectedPlatform="";
         readonly Forms.NotifyIcon tray;readonly DispatcherTimer timer;readonly CancellationTokenSource cancel=new CancellationTokenSource();
         string signature="";bool exiting;bool ready;ToastWindow toast;DateTime lastStatusExport;
         List<Session> latest=new List<Session>(),recent=new List<Session>(),displayed=new List<Session>();readonly DateTime demoTime=DateTime.UtcNow;
@@ -124,7 +172,7 @@ namespace CodexFloat {
             UseLayoutRounding=true;SnapsToDevicePixels=true;TextOptions.SetTextFormattingMode(this,TextFormattingMode.Display);
             var outer=new Grid{Margin=new Thickness(12)};Content=outer;
             shell=new Border{Background=Theme.Background,BorderBrush=Theme.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(11),Effect=new System.Windows.Media.Effects.DropShadowEffect{Color=Colors.Black,Opacity=.12,BlurRadius=18,ShadowDepth=3}};outer.Children.Add(shell);
-            var layout=new Grid();for(int i=0;i<4;i++)layout.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});shell.Child=layout;
+            var layout=new Grid();for(int i=0;i<5;i++)layout.RowDefinitions.Add(new RowDefinition{Height=i==3?new GridLength(1,GridUnitType.Star):GridLength.Auto});shell.Child=layout;
             var header=new Grid{Margin=new Thickness(16,10,10,9),Background=Brushes.Transparent};
             var dragSurface=new Border{Background=Brushes.Transparent,Child=header,Cursor=Cursors.SizeAll,ToolTip="按住顶部空白处拖动"};layout.Children.Add(dragSurface);
             header.ColumnDefinitions.Add(new ColumnDefinition());header.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
@@ -148,9 +196,17 @@ namespace CodexFloat {
             currentTab=Theme.Tab("当前任务");currentTab.ToolTip="运行中和尚未清除的任务";currentTab.Click+=(o,e)=>SelectTab(false);tabs.Children.Add(currentTab);
             recentTab=Theme.Tab("最近完成");recentTab.ToolTip="清除当前列表后，完成记录仍保留在这里";recentTab.Click+=(o,e)=>SelectTab(true);Grid.SetColumn(recentTab,1);tabs.Children.Add(recentTab);
             System.Windows.Automation.AutomationProperties.SetName(currentTab,"当前任务");System.Windows.Automation.AutomationProperties.SetName(recentTab,"最近完成");
-            scroll.Content=list;scroll.VerticalScrollBarVisibility=ScrollBarVisibility.Auto;scroll.HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled;scroll.MaxHeight=440;scroll.Margin=new Thickness(10,0,10,4);Grid.SetRow(scroll,2);layout.Children.Add(scroll);
-            var footer=new Grid{Margin=new Thickness(16,8,14,11)};footer.ColumnDefinitions.Add(new ColumnDefinition());footer.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});Grid.SetRow(footer,3);layout.Children.Add(footer);footer.Children.Add(summary);
-            clear=Theme.Button("清除完成","移出当前列表，最近完成中仍然保留",64);clear.FontSize=11;clear.Height=22;clear.Click+=(o,e)=>{engine.ClearFinished();Refresh();};Grid.SetColumn(clear,1);footer.Children.Add(clear);
+            Grid.SetRow(platformFilterBar,2);layout.Children.Add(platformFilterBar);
+            AddPlatformFilter("","全部","显示所有启用平台的当前任务");
+            AddPlatformFilter("codex","Codex","仅显示 Codex 当前任务");
+            AddPlatformFilter("claude","Claude","仅显示 Claude 桌面端 Code 当前任务");
+            AddPlatformFilter("workbuddy","WorkBuddy","仅显示 WorkBuddy 当前任务");
+            AddPlatformFilter(AntigravitySource.Platform,"Antigravity","仅显示 Antigravity 当前任务");
+            UpdatePlatformFilters();
+
+            scroll.Content=list;scroll.VerticalScrollBarVisibility=ScrollBarVisibility.Auto;scroll.HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled;scroll.MaxHeight=440;scroll.Margin=new Thickness(10,0,10,4);Grid.SetRow(scroll,3);layout.Children.Add(scroll);
+            var footer=new Grid{Margin=new Thickness(16,8,14,11)};footer.ColumnDefinitions.Add(new ColumnDefinition());footer.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});Grid.SetRow(footer,4);layout.Children.Add(footer);footer.Children.Add(summary);
+            clear=Theme.Button("清除完成","移出当前列表，最近完成中仍然保留",64);clear.FontSize=11;clear.Height=22;clear.Click+=(o,e)=>{engine.ClearFinished(selectedPlatform);Refresh();};Grid.SetColumn(clear,1);footer.Children.Add(clear);
             var grip=new Thumb{Width=10,Height=12,HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Bottom,Cursor=Cursors.SizeWE,Opacity=.15,Margin=new Thickness(0,0,3,3)};
             grip.DragDelta+=(o,e)=>{Width=Math.Max(330,Math.Min(640,Width+e.HorizontalChange));};grip.DragCompleted+=(o,e)=>SaveSettings();outer.Children.Add(grip);
             tray=new Forms.NotifyIcon{Icon=System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location),Visible=!Program.RenderOnly,Text="一泽的 AI Agent 任务监控"};
@@ -177,7 +233,27 @@ namespace CodexFloat {
         void OpenSettingsMenu(Button button){button.ContextMenu=BuildMenu();button.ContextMenu.PlacementTarget=button;button.ContextMenu.Placement=PlacementMode.Bottom;button.ContextMenu.HorizontalOffset=-192;button.ContextMenu.VerticalOffset=3;
             if(Program.EvidenceDir!="")button.ContextMenu.Opened+=(o,e)=>Dispatcher.BeginInvoke(new Action(()=>{try{var cm=button.ContextMenu;cm.UpdateLayout();var bmp=new RenderTargetBitmap((int)Math.Ceiling(cm.ActualWidth*1.5),(int)Math.Ceiling(cm.ActualHeight*1.5),144,144,PixelFormats.Pbgra32);bmp.Render(cm);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bmp));Directory.CreateDirectory(Program.EvidenceDir);using(var f=File.Create(Path.Combine(Program.EvidenceDir,"settings.png")))encoder.Save(f);}catch(Exception ex){Program.Log("menu-capture",ex);}}),DispatcherPriority.ContextIdle);
             button.ContextMenu.IsOpen=true;}
-        void UpdatePlatforms(){engine.Configure(settings.MonitorCodex,settings.MonitorWorkBuddy,settings.MonitorClaude,settings.MonitorAntigravity);SaveSettings();signature="platform-selection-changed";Refresh();}
+        void AddPlatformFilter(string platform,string label,string tooltip){
+            var button=Theme.PlatformFilter(label,platform);
+            button.ToolTip=tooltip;
+            System.Windows.Automation.AutomationProperties.SetName(button,tooltip);
+            button.Click+=(o,e)=>{
+                if(selectedPlatform==platform){button.IsChecked=true;return;}
+                selectedPlatform=platform;
+                Refresh();
+                scroll.ScrollToTop();
+            };
+            platformFilters.Add(platform,button);
+            platformFilterBar.Children.Add(button);
+        }
+        void UpdatePlatformFilters(){
+            platformFilters["codex"].Visibility=settings.MonitorCodex?Visibility.Visible:Visibility.Collapsed;
+            platformFilters["claude"].Visibility=settings.MonitorClaude?Visibility.Visible:Visibility.Collapsed;
+            platformFilters["workbuddy"].Visibility=settings.MonitorWorkBuddy?Visibility.Visible:Visibility.Collapsed;
+            platformFilters[AntigravitySource.Platform].Visibility=settings.MonitorAntigravity?Visibility.Visible:Visibility.Collapsed;
+            if(platformFilters[selectedPlatform].Visibility==Visibility.Collapsed)selectedPlatform="";
+        }
+        void UpdatePlatforms(){engine.Configure(settings.MonitorCodex,settings.MonitorWorkBuddy,settings.MonitorClaude,settings.MonitorAntigravity);UpdatePlatformFilters();SaveSettings();signature="platform-selection-changed";Refresh();}
         void SelectTab(bool history){
             if(showingRecent)recentScroll=scroll.VerticalOffset;else currentScroll=scroll.VerticalOffset;
             showingRecent=history;signature="tab-changed";Refresh();double offset=history?recentScroll:currentScroll;
@@ -192,7 +268,7 @@ namespace CodexFloat {
             var test=new MenuItem{Header="测试完成提醒"};test.Click+=(o,e)=>OnCompleted(new List<Session>{new Session{Title="提醒已开启",Cwd="一泽的 AI Agent 任务监控",Status="completed"}});m.Items.Add(test);
             var reset=new MenuItem{Header="重置窗口位置"};reset.Click+=(o,e)=>{settings.Left=-99999;settings.Top=-99999;PositionWindow();SaveSettings();};m.Items.Add(reset);
             var startup=new MenuItem{Header="开机自动启动",IsCheckable=true,IsChecked=StartupEnabled()};startup.Click+=(o,e)=>SetStartup(startup.IsChecked);m.Items.Add(startup);
-            m.Items.Add(new Separator());var about=new MenuItem{Header="关于 / 使用说明"};about.Click+=(o,e)=>MessageBox.Show(this,"一泽的 AI Agent 任务监控 1.7.1\n\n支持 Codex / WorkBuddy / Claude 桌面端 Code / Antigravity，在菜单中勾选监控平台。\n新一轮开始会自动加入列表。\n绿色代表本轮结束，点击标题打开对应对话。\n中断不会标为完成；状态待确认时不会误报。\n完成记录在「最近完成」保留最近 200 条。\n当前和完成列表自动保存在本地，启动后重新检测。\n右键已完成会话可「加入完成」并单独移出当前。\n拖动顶部移动；右下角调整宽度。\n\n仅在本机读取会话元数据，无网络请求。\n配置与监控记录："+Program.DataDir+"\n\n项目：github.com/YizeAINative/yize-codex-monitor\n参考：github.com/LH-03/agent-monitor-hud", "关于一泽的 AI Agent 任务监控");m.Items.Add(about);
+            m.Items.Add(new Separator());var about=new MenuItem{Header="关于 / 使用说明"};about.Click+=(o,e)=>MessageBox.Show(this,"一泽的 AI Agent 任务监控 1.7.2\n\n支持 Codex / WorkBuddy / Claude 桌面端 Code / Antigravity，在菜单中勾选监控平台。\n新一轮开始会自动加入列表。\n绿色代表本轮结束，点击标题打开对应对话。\n中断不会标为完成；状态待确认时不会误报。\n完成记录在「最近完成」保留最近 200 条。\n当前和完成列表自动保存在本地，启动后重新检测。\n右键已完成会话可「加入完成」并单独移出当前。\n拖动顶部移动；右下角调整宽度。\n\n仅在本机读取会话元数据，无网络请求。\n配置与监控记录："+Program.DataDir+"\n\n项目：github.com/YizeAINative/yize-codex-monitor\n参考：github.com/LH-03/agent-monitor-hud", "关于一泽的 AI Agent 任务监控");m.Items.Add(about);
             var exit=new MenuItem{Header="退出软件"};exit.Click+=(o,e)=>Exit();m.Items.Add(exit);return m;}
         void AddCheck(ContextMenu m,string name,bool check,Action action){var item=new MenuItem{Header=name,IsCheckable=true,IsChecked=check};item.Click+=(o,e)=>action();m.Items.Add(item);}
         bool StartupEnabled(){using(var key=Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))return key!=null&&key.GetValue("CodexFloat")!=null;}
@@ -200,26 +276,59 @@ namespace CodexFloat {
         List<Session> DemoSessions(){return new List<Session>{
             new Session{Id="11111111-1111-4111-8111-111111111111",Title="整理项目资料",Cwd=@"C:\Projects\research",Status="running",Visible=true,StartedAt=demoTime.AddMinutes(-8)},
             new Session{Id="22222222-2222-4222-8222-222222222222",Platform="workbuddy",Title="运行构建与测试",Cwd=@"C:\Projects\demo-app",Status="running",Visible=true,StartedAt=demoTime.AddMinutes(-12)},
-            new Session{Id="33333333-3333-4333-8333-333333333333",Platform="claude",Title="完成工具配置",Cwd=@"C:\Projects\assistant",Status="completed",Visible=true,StartedAt=demoTime.AddMinutes(-25),FinishedAt=demoTime}};}
+            new Session{Id="33333333-3333-4333-8333-333333333333",Platform="claude",Title="完成工具配置",Cwd=@"C:\Projects\assistant",Status="completed",Visible=true,StartedAt=demoTime.AddMinutes(-25),FinishedAt=demoTime},
+            new Session{Id="55555555-5555-4555-8555-555555555555",Platform=AntigravitySource.Platform,Title="检查页面布局",Cwd=@"C:\Projects\web",Status="waiting",Visible=true,StartedAt=demoTime.AddMinutes(-4)}};}
         List<Session> DemoHistory(){var result=DemoSessions();for(int i=0;i<result.Count;i++){if(result[i].Status!="completed"){result[i].Status="completed";result[i].FinishedAt=demoTime.AddMinutes(-20-i*4);result[i].StartedAt=result[i].FinishedAt.AddMinutes(-5-i*3);}result[i].TurnId="demo-round-"+i;}var earlier=result[0].Copy();earlier.Id="44444444-4444-4444-8444-444444444444";earlier.TurnId="demo-earlier";earlier.Title="整理历史资料";earlier.FinishedAt=demoTime.AddDays(-1).AddMinutes(-10);earlier.StartedAt=earlier.FinishedAt.AddMinutes(-4);result.Add(earlier);return CompletionHistory.LatestPerSession(result);}
         public void RenderPreview(string path){
-            latest=DemoSessions();recent=DemoHistory();displayed=showingRecent?recent:latest;currentTab.Content="当前任务  "+latest.Count;recentTab.Content="最近完成  "+recent.Count;currentTab.IsChecked=!showingRecent;recentTab.IsChecked=showingRecent;clear.Visibility=showingRecent?Visibility.Collapsed:Visibility.Visible;summary.Text=showingRecent?"最近 "+recent.Count+" 个会话 · 清除当前列表后仍保留":"2 个处理中 · 1 个完成";BuildList();var visual=(FrameworkElement)Content;
-            visual.Measure(new Size(Width,double.PositiveInfinity));double height=visual.DesiredSize.Height;visual.Arrange(new Rect(0,0,Width,height));visual.UpdateLayout();
+            UpdateView();
+            BuildList();var visual=(FrameworkElement)Content;
+            visual.Measure(new Size(Width,MaxHeight));double height=Math.Min(visual.DesiredSize.Height,MaxHeight);visual.Arrange(new Rect(0,0,Width,height));visual.UpdateLayout();
             var bitmap=new RenderTargetBitmap((int)Math.Ceiling(Width*1.5),(int)Math.Ceiling(height*1.5),144,144,PixelFormats.Pbgra32);bitmap.Render(visual);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));using(var f=File.Create(path))encoder.Save(f);
             timer.Stop();tray.Dispose();engine.Dispose();
         }
-        void Refresh(){latest=Program.Demo?DemoSessions():engine.Snapshot();recent=Program.Demo?DemoHistory():engine.RecentCompleted();displayed=showingRecent?recent:latest;
-            string sig=(showingRecent?"recent:":"current:")+string.Join("|",displayed.Select(s=>s.Key+"/"+s.TurnId+"/"+s.Label+"/"+s.Group+"/"+s.Status+"/"+s.StartedAt.Ticks+"/"+s.FinishedAt.Ticks));
+        void UpdateView(){
+            latest=Program.Demo?DemoSessions().Where(s=>platformFilters[s.Platform].Visibility==Visibility.Visible).ToList():engine.Snapshot();
+            recent=Program.Demo?DemoHistory():engine.RecentCompleted();
+            displayed=showingRecent?recent:selectedPlatform==""?latest:latest.Where(s=>s.Platform==selectedPlatform).ToList();
             currentTab.Content="当前任务  "+latest.Count;recentTab.Content="最近完成  "+recent.Count;currentTab.IsChecked=!showingRecent;recentTab.IsChecked=showingRecent;clear.Visibility=showingRecent?Visibility.Collapsed:Visibility.Visible;
-            int running=latest.Count(s=>s.Status=="running"),done=latest.Count(s=>s.Status=="completed"),other=latest.Count-running-done;
-            summary.Text=showingRecent?(engine.HistoryError!=""?engine.HistoryError:"最近 "+recent.Count+" 个会话 · 清除当前列表后仍保留"):(engine.CurrentError!=""?engine.CurrentError:(!Program.Demo&&engine.Rechecking?"已恢复列表，正在检测状态…":latest.Count==0?(Program.Demo?"演示界面":engine.Health):running+" 个处理中"+(done>0?" · "+done+" 个完成":"")+(other>0?" · "+other+" 个待查看":"")));summary.ToolTip=showingRecent?"每个会话只显示最新完成，折叠状态和完成记录重启后保留":"当前列表已保存在本地，启动后自动检测状态";
+            platformFilterBar.Visibility=showingRecent?Visibility.Collapsed:Visibility.Visible;
+            foreach(var pair in platformFilters)pair.Value.IsChecked=pair.Key==selectedPlatform;
+            string platformLabel=(string)platformFilters[selectedPlatform].Content;
+            clear.ToolTip=selectedPlatform==""?"移出当前列表，最近完成中仍然保留":"移出 "+platformLabel+" 的已结束任务，最近完成中仍然保留";
+            if(showingRecent){
+                summary.Text=engine.HistoryError!=""?engine.HistoryError:"最近 "+recent.Count+" 个会话 · 清除当前列表后仍保留";
+            }else if(engine.CurrentError!=""){
+                summary.Text=engine.CurrentError;
+            }else if(!Program.Demo&&engine.Rechecking){
+                summary.Text="已恢复列表，正在检测状态…";
+            }else if(displayed.Count==0){
+                summary.Text=selectedPlatform==""?(Program.Demo?"演示界面":engine.Health):"0 个任务";
+            }else{
+                int running=displayed.Count(s=>s.Status=="running");
+                int done=displayed.Count(s=>s.Status=="completed");
+                int other=displayed.Count-running-done;
+                summary.Text=running+" 个处理中"+(done>0?" · "+done+" 个完成":"")+(other>0?" · "+other+" 个待查看":"");
+            }
+            summary.ToolTip=showingRecent?"每个会话只显示最新完成，折叠状态和完成记录重启后保留":"当前列表已保存在本地，启动后自动检测状态";
+        }
+        void Refresh(){
+            UpdateView();
+            string sig=(showingRecent?"recent:":"current:"+selectedPlatform+":")+string.Join("|",displayed.Select(s=>s.Key+"/"+s.TurnId+"/"+s.Label+"/"+s.Group+"/"+s.Status+"/"+s.StartedAt.Ticks+"/"+s.FinishedAt.Ticks));
+            int running=latest.Count(s=>s.Status=="running"),done=latest.Count(s=>s.Status=="completed");
             tray.Text="一泽的 AI Agent 任务监控 · "+running+" 处理中 · "+done+" 完成";
             if(sig!=signature||list.Children.Count==0){signature=sig;BuildList();if(Program.EvidenceDir!=""&&ready)Dispatcher.BeginInvoke(new Action(()=>Capture(Path.Combine(Program.EvidenceDir,"window.png"))),DispatcherPriority.ContextIdle);}
-            if(!showingRecent)foreach(var session in latest){TextBlock label;if(runtimeLabels.TryGetValue(session.Key,out label))label.Text=session.RuntimeText(DateTime.UtcNow);}
+            if(!showingRecent)foreach(var session in displayed){TextBlock label;if(runtimeLabels.TryGetValue(session.Key,out label))label.Text=session.RuntimeText(DateTime.UtcNow);}
             if((DateTime.UtcNow-lastStatusExport).TotalSeconds>=5){try{Json.Save(Path.Combine(Program.DataDir,"status.json"),new {updatedAt=DateTime.UtcNow,health=engine.Health,running=running,completed=done,sessions=latest});}catch{}lastStatusExport=DateTime.UtcNow;}
         }
         void BuildList(){double old=scroll.VerticalOffset;list.Children.Clear();runtimeLabels.Clear();
-            if(displayed.Count==0){var empty=new StackPanel{Margin=new Thickness(18,27,18,32)};var line=Theme.Text(showingRecent?"暂无完成记录":"等待新的任务",14,Theme.Ink);line.HorizontalAlignment=HorizontalAlignment.Center;empty.Children.Add(line);var sub=Theme.Text(showingRecent?"任务完成后自动保存，清除当前列表也能找回":settings.MonitorCodex||settings.MonitorWorkBuddy||settings.MonitorClaude||settings.MonitorAntigravity?"已选平台开始执行后，会自动出现在这里":"请在右上角设置中勾选监控平台",11,Theme.Muted);sub.HorizontalAlignment=HorizontalAlignment.Center;sub.Margin=new Thickness(0,10,0,0);empty.Children.Add(sub);list.Children.Add(empty);return;}
+            if(displayed.Count==0){
+                var empty=new StackPanel{Margin=new Thickness(18,27,18,32)};
+                string title=showingRecent?"暂无完成记录":selectedPlatform==""?"等待新的任务":platformFilters[selectedPlatform].Content+" 暂无任务";
+                var line=Theme.Text(title,14,Theme.Ink);line.HorizontalAlignment=HorizontalAlignment.Center;empty.Children.Add(line);
+                string hint=showingRecent?"任务完成后自动保存，清除当前列表也能找回":
+                    platformFilterBar.Children.OfType<ToggleButton>().Any(b=>b!=platformFilters[""]&&b.Visibility==Visibility.Visible)?"开始执行后，任务会自动出现在这里":"请在右上角设置中勾选监控平台";
+                var sub=Theme.Text(hint,11,Theme.Muted);sub.HorizontalAlignment=HorizontalAlignment.Center;sub.Margin=new Thickness(0,10,0,0);empty.Children.Add(sub);list.Children.Add(empty);return;
+            }
             foreach(var platformGroup in displayed.GroupBy(s=>s.Platform??"codex").OrderByDescending(g=>g.Max(s=>showingRecent?s.FinishedAt:s.StartedAt))){
                 bool buddy=platformGroup.Key=="workbuddy",claude=platformGroup.Key=="claude",agy=platformGroup.Key==AntigravitySource.Platform;
                 var card=new Border{CornerRadius=new CornerRadius(8),BorderThickness=new Thickness(1),BorderBrush=Theme.B(agy?"#E0DDF2":claude?"#EEDFCF":buddy?"#DEE6EC":"#E0E6DB"),Background=Theme.B(agy?"#F6F3FC":claude?"#FCF5ED":buddy?"#F3F6F9":"#F4F7F0"),Margin=new Thickness(0,3,0,8),Padding=new Thickness(7,8,7,7)};

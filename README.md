@@ -6,11 +6,15 @@
 
 | 系统 | 版本与下载 |
 | --- | --- |
-| Windows | [v1.7.1 便携包](https://github.com/YizeAINative/yize-codex-monitor/releases/download/v1.7.1/Yize-AI-Agent-Monitor-1.7.1.zip)，解压后运行 `CodexFloat.exe`。 |
+| Windows | [v1.7.2 便携包](https://github.com/YizeAINative/yize-codex-monitor/releases/download/v1.7.2/Yize-AI-Agent-Monitor-1.7.2.zip)，解压后运行 `CodexFloat.exe`。 |
 | Mac · Apple Silicon | [v1.7.0 Apple Silicon 版](https://github.com/YizeAINative/yize-codex-monitor/releases/download/v1.7.0/Yize-AI-Agent-Monitor-1.7.0-macOS-arm64.zip)，解压后运行 `Codex Monitor.app`。 |
 | Mac · Intel | [v1.7.0 Intel Mac 版](https://github.com/YizeAINative/yize-codex-monitor/releases/download/v1.7.0/Yize-AI-Agent-Monitor-1.7.0-macOS-x86_64.zip)，解压后运行 `Codex Monitor.app`。 |
 
 Mac 需要 macOS 13+，使用临时签名，尚未进行 Developer ID 公证。操作和构建方法见 [Mac 使用说明](macos/README.md)。以下界面说明以 Windows 版为主。
+
+## v1.7.2 · Windows 平台筛选（2026-11-21）
+
+「当前任务」下方新增圆角平台按钮，颜色和平台卡片对应，选中项用深色底和白字突出。按钮随设置勾选项更新，所有平台启用时也能在最窄窗口排成一行。点击平台只看该平台的当前任务，取消勾选正在查看的平台时自动切回「全部」。
 
 ## v1.7.1 · Windows 新增 Antigravity（2026-11-18）
 
@@ -34,7 +38,7 @@ Antigravity 默认开启，可在右上角「⋯ → 监控平台」切换。程
 
 Codex 使用浅绿色，WorkBuddy 使用浅蓝色，Claude Code 使用浅橙色，Antigravity 使用浅紫色。任务行与悬停底色保持所属平台的色系，完成标记使用绿色。
 
-![界面示意，使用固定示例数据](docs/platform-preview.png)
+![当前任务与彩色平台筛选按钮，使用固定示例数据](docs/platform-preview.png)
 
 ![最近完成，使用固定示例数据](docs/recent-completed-preview.png)
 
@@ -54,7 +58,7 @@ Codex 使用浅绿色，WorkBuddy 使用浅蓝色，Claude Code 使用浅橙色�
 - **拖动顶部**：按住顶部标题栏的空白区域或名称都可以移动窗口；置顶、设置、收起按钮仍正常点击。右下角可调整宽度。
 - **右上角三个点**：选择监控平台，设置置顶、声音、弹出提醒、窗口位置和开机启动。取消平台勾选后停止该平台读取、隐藏其条目并停止提醒；重新勾选不补播暂停期间的完成通知。
 - **右上角减号**：收起到系统托盘。双击托盘图标或再次启动 EXE 即可找回。
-- **清除完成**：只移出当前任务列表中已结束的行；成功完成的记录继续保留在「最近完成」，不会删除平台的聊天或文件。
+- **清除完成**：选中平台时，只移出该平台已结束的行。选「全部」时清除所有已启用平台的已结束任务，成功完成的记录继续保留在「最近完成」。
 - **单独加入完成**：在「当前任务」中右键已完成的会话名称，选择「加入完成」，会保存到最近完成并只移出这一条。运行中、等待中或尚未确认完成的任务不会被此操作标记为成功。单条移出状态会保存，重启不重复出现；新一轮提问仍会自动重新加入。
 
 绿色表示当前执行轮次已经结束，并不代表整个项目的业务目标已经完成。
@@ -105,7 +109,7 @@ Claude 适配状态单独保存在 `%LOCALAPPDATA%\CodexFloat\claude-desktop-cod
 
 使用本机 .NET Framework 编译器，无 NuGet 或 npm 依赖。`CoreTests.exe` 在独立临时目录运行，不修改真实 Codex 数据。
 
-已通过 162 项核心检查和 12 项 WPF 界面交互检查。覆盖列表持久化、启动复核、进程不可用、离线期间完成、单条加入完成、移出后重启不重复、新轮次重新加入、历史去重、备份恢复与文件夹折叠。界面检查实际触发菜单与按钮事件，验证只移出选中条目及保留最近完成。测试使用隔离数据，不重启电脑或修改用户会话。
+Windows 通过 170 项核心检查和 21 项 WPF 界面交互检查，覆盖状态识别、完成历史、重启恢复和平台筛选。界面检查使用隔离数据，验证设置联动、最窄窗口一行布局，以及筛选时只清除选中平台的已结束任务。
 
 Mac 使用 `bash macos/test.sh` 和 `bash macos/build.sh`。v1.7.0 已在 GitHub 的 Apple Silicon 与 Intel macOS 环境分别通过 65 项核心检查、应用构建及临时签名校验；Windows 自动检查同样通过，见 [合入前验证记录](https://github.com/YizeAINative/yize-codex-monitor/actions/runs/41949337290)。自动检查使用隔离数据，真实 Agent 的完整操作与登录自启验证范围见 [Mac 验收记录](macos/VERIFICATION.md)。
 

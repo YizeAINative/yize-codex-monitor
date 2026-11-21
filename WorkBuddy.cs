@@ -164,7 +164,15 @@ namespace CodexFloat {
         public bool Rechecking {get{return !current.Checked;}}
         List<Session> SourceSnapshot(){var list=new List<Session>();if(enableCodex&&codex!=null)list.AddRange(codex.Snapshot());if(enableWorkBuddy&&workbuddy!=null)list.AddRange(workbuddy.Snapshot());if(enableClaude&&claude!=null)list.AddRange(claude.Snapshot());if(antigravity!=null)list.AddRange(antigravity.Snapshot);return list;}
         public List<Session> Snapshot(){lock(gate)return current.Snapshot(Enabled);}
-        public void ClearFinished(){lock(gate){RememberCompletions();var ended=current.Snapshot(Enabled).Where(s=>s.Terminal).ToList();history.Record(ended);if(history.Error!="")return;foreach(var s in ended)Dismiss(s);}}
+        public void ClearFinished(string platform=""){
+            lock(gate){
+                RememberCompletions();
+                var ended=current.Snapshot(Enabled).Where(s=>s.Terminal&&(platform==""||s.Platform==platform)).ToList();
+                history.Record(ended);
+                if(history.Error!="")return;
+                foreach(var s in ended)Dismiss(s);
+            }
+        }
         public bool ArchiveCompleted(Session requested){lock(gate){
             var actual=current.Snapshot(Enabled).FirstOrDefault(s=>s.Key==requested.Key);if(actual==null||actual.Status!="completed"||!CurrentTaskIdentity.SameRound(actual,requested))return false;
             history.Record(new[]{actual});if(history.Error!="")return false;Dismiss(actual);return true;
