@@ -30,6 +30,8 @@ namespace CodexFloat {
                 "INSERT INTO conversation_summaries VALUES('bbbbbbbb-3456-4123-8123-111111111111','Child','','CASCADE_RUN_STATUS_RUNNING',1,0," +
                 "'2026-11-18 03:00:01+00:00','2026-11-18 03:00:00+00:00',0,'" + id + "',1);");
             Db(trajectory, "CREATE TABLE steps(idx INTEGER PRIMARY KEY,step_type INT,status INT); INSERT INTO steps VALUES(0,14,3),(1,15,2);");
+            Db(summaries,"ALTER TABLE conversation_summaries ADD COLUMN preview TEXT DEFAULT ''; "+
+                "UPDATE conversation_summaries SET title='',preview='Review project layout',last_user_input_step_index=-1 WHERE nesting_depth=0;");
 
             using (var hub = new MonitoringHub(source,source,state,false,false,runtimeCheck:p=>true,ag:source,aa:true)) {
                 int notifications = 0;
@@ -38,6 +40,8 @@ namespace CodexFloat {
                 var active = hub.Snapshot().Single();
                 Check(active.Status=="running" && active.PlatformName=="Antigravity" && active.Group=="demo" && notifications==0,
                     "Antigravity discovers active conversation with workspace and excludes child rows");
+                Check(active.Title=="Review project layout" && active.TurnId.EndsWith("-0"),
+                    "missing Antigravity input index resolves to the actual input and preview supplies a title");
                 Db(trajectory, "UPDATE steps SET status=3 WHERE idx=1; INSERT INTO steps VALUES(2,138,9);");
                 hub.Poll();
                 Check(hub.Snapshot().Single().Status=="waiting" && notifications==0, "Antigravity detects pending user input");
@@ -52,6 +56,10 @@ namespace CodexFloat {
                     hub.RecentCompleted().Single().TurnId==completed.TurnId && notifications==1,
                     "Antigravity freezes timer, persists history and sends one completion notification");
                 Check(hub.ArchiveCompleted(completed) && hub.Snapshot().Count==0, "Antigravity archives a single completed conversation");
+                Db(summaries,"UPDATE conversation_summaries SET title='Project layout review' WHERE nesting_depth=0;");
+                hub.Poll();
+                Check(hub.RecentCompleted().Single().Title=="Project layout review" && notifications==1,
+                    "archived history picks up the real title without another notification");
             }
 
             using (var hub = new MonitoringHub(source,source,state,false,false,runtimeCheck:p=>true,ag:source,aa:true)) {
@@ -73,6 +81,38 @@ namespace CodexFloat {
                 hub.Configure(false,false,false,false);
                 Check(hub.Snapshot().Count==0 && hub.RecentCompleted().Count==1, "Antigravity toggle hides current tasks and keeps history");
             }
+            string child="cccccccc-3456-4123-8123-111111111111";
+            string rootWire="8A01263224"+BitConverter.ToString(Encoding.ASCII.GetBytes(id)).Replace("-","");
+            Check(!AntigravityLineage.IsChild(id,rootWire) && AntigravityLineage.IsChild(child,rootWire),
+                "root conversation UUID is compared to the session itself");
+            Check(!AntigravityLineage.IsChild(child,rootWire+"FF") &&
+                !AntigravityLineage.IsChild(child,rootWire.Replace("3224","3A24")),
+                "malformed lineage and unrelated UUID fields never hide a main conversation");
+            string extended=rootWire+"08"+new string('F',18);
+            Check(AntigravityLineage.IsChild(child,extended+"01") && !AntigravityLineage.IsChild(child,extended+"02"),
+                "a valid 64-bit field preserves lineage but an overflowing field cannot remove a cached session");
+            Db(summaries,"ALTER TABLE conversation_summaries ADD COLUMN raw_summary BLOB; "+
+                "UPDATE conversation_summaries SET raw_summary=X'"+rootWire+"' WHERE nesting_depth=0; "+
+                "INSERT INTO conversation_summaries SELECT '"+child+"','child with missing parent columns',workspace_uris,"+
+                "'CASCADE_RUN_STATUS_RUNNING',1,0,last_modified_time,last_user_input_time,0,'',0,preview,raw_summary FROM conversation_summaries WHERE conversation_id='"+id+"';");
+            string migrated=Path.Combine(root,"agy-child-migration");
+            var rootRow=Finished(id,"root",DateTime.UtcNow,AntigravitySource.Platform);
+            var childRow=Finished(child,"child",DateTime.UtcNow,AntigravitySource.Platform);
+            var otherPlatform=Finished(child,"other",DateTime.UtcNow,"codex");
+            var saved=new List<Session>{rootRow,childRow,otherPlatform};
+            Json.Save(Path.Combine(migrated,"current-tasks.json"),new CurrentTasksDocument{Sessions=saved});
+            new CompletionHistory(migrated).Record(saved);
+            using(var hub=new MonitoringHub(source,source,migrated,false,false,runtimeCheck:p=>true,ag:source,aa:true)){
+                int alerts=0;hub.Completed+=items=>alerts+=items.Count;hub.Poll();hub.Poll();
+                Check(hub.Snapshot().All(s=>s.Id!=child) && hub.Snapshot().Any(s=>s.Id==id) && alerts==0,
+                    "nested metadata excludes child from monitoring and removes the stale current row");
+                var kept=hub.RecentCompleted();
+                Check(kept.Count==2 && kept.Any(s=>s.Platform=="codex" && s.Id==child) && kept.Any(s=>s.Id==id),
+                    "stale child history is removed while unrelated conversations are preserved");
+            }
+            Check(new CurrentTasks(migrated).Snapshot(p=>p==AntigravitySource.Platform).All(s=>s.Id!=child) &&
+                new CompletionHistory(migrated).Snapshot().All(s=>s.Platform!=AntigravitySource.Platform || s.Id!=child),
+                "excluded children stay out of both persisted lists after restart");
         }
         static void CurrentChecks(){
             string id="11111111-aaaa-4111-8111-111111111111",otherId="22222222-aaaa-4222-8222-222222222222";DateTime now=DateTime.UtcNow;string data=Path.Combine(root,"current-cache");

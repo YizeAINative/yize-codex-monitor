@@ -20,7 +20,7 @@ using Forms = System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("一泽的 AI Agent 任务监控")]
 [assembly: System.Reflection.AssemblyProduct("CodexFloat")]
-[assembly: System.Reflection.AssemblyVersion("1.7.2.0")]
+[assembly: System.Reflection.AssemblyVersion("1.7.3.0")]
 namespace CodexFloat {
     static class Program {
         public static string DataDir,Home,WorkBuddyHome,ClaudeHome,AntigravityHome,CapturePath="",EvidenceDir="";public static bool Demo,DebugTaskbar,PreviewSettings,RenderOnly,InitialRecent;
@@ -161,10 +161,16 @@ namespace CodexFloat {
         List<Session> latest=new List<Session>(),recent=new List<Session>(),displayed=new List<Session>();readonly DateTime demoTime=DateTime.UtcNow;
         bool showingRecent;double currentScroll,recentScroll;
         readonly HashSet<string> collapsedRecentFolders;
+        readonly HashSet<string> collapsedCurrentFolders,pinnedFolders,pinnedSessions;
+        readonly Button foldAll;
+        HashSet<string> CollapsedFolders {get{return showingRecent?collapsedRecentFolders:collapsedCurrentFolders;}}
         readonly Dictionary<string,TextBlock> runtimeLabels=new Dictionary<string,TextBlock>();
         public MainWindow(){
             settings=LoadSettings();engine=new MonitoringHub(Program.Home,Program.WorkBuddyHome,Program.DataDir,settings.MonitorCodex,settings.MonitorWorkBuddy,Program.ClaudeHome,settings.MonitorClaude,ag:Program.AntigravityHome,aa:settings.MonitorAntigravity);
             collapsedRecentFolders=new HashSet<string>(settings.CollapsedRecentFolders??new List<string>(),StringComparer.OrdinalIgnoreCase);
+            collapsedCurrentFolders=SavedKeys(settings.CollapsedCurrentFolders);
+            pinnedFolders=SavedKeys(settings.PinnedFolders);
+            pinnedSessions=SavedKeys(settings.PinnedSessions);
             showingRecent=Program.InitialRecent;
             Title=Program.Demo?"一泽的 AI Agent 样式预览（非实时）":"一泽的 AI Agent 任务监控";FontFamily=new FontFamily("Microsoft YaHei UI, Segoe UI");FontSize=13;
             Width=Math.Max(330,Math.Min(640,settings.Width));SizeToContent=SizeToContent.Height;MinHeight=140;MaxHeight=620;
@@ -197,16 +203,23 @@ namespace CodexFloat {
             recentTab=Theme.Tab("最近完成");recentTab.ToolTip="清除当前列表后，完成记录仍保留在这里";recentTab.Click+=(o,e)=>SelectTab(true);Grid.SetColumn(recentTab,1);tabs.Children.Add(recentTab);
             System.Windows.Automation.AutomationProperties.SetName(currentTab,"当前任务");System.Windows.Automation.AutomationProperties.SetName(recentTab,"最近完成");
             Grid.SetRow(platformFilterBar,2);layout.Children.Add(platformFilterBar);
-            AddPlatformFilter("","全部","显示所有启用平台的当前任务");
-            AddPlatformFilter("codex","Codex","仅显示 Codex 当前任务");
-            AddPlatformFilter("claude","Claude","仅显示 Claude 桌面端 Code 当前任务");
-            AddPlatformFilter("workbuddy","WorkBuddy","仅显示 WorkBuddy 当前任务");
-            AddPlatformFilter(AntigravitySource.Platform,"Antigravity","仅显示 Antigravity 当前任务");
+            AddPlatformFilter("","全部","显示全部平台");
+            AddPlatformFilter("codex","Codex","仅显示 Codex");
+            AddPlatformFilter("claude","Claude","仅显示 Claude 桌面端 Code");
+            AddPlatformFilter("workbuddy","WorkBuddy","仅显示 WorkBuddy");
+            AddPlatformFilter(AntigravitySource.Platform,"Antigravity","仅显示 Antigravity");
             UpdatePlatformFilters();
 
             scroll.Content=list;scroll.VerticalScrollBarVisibility=ScrollBarVisibility.Auto;scroll.HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled;scroll.MaxHeight=440;scroll.Margin=new Thickness(10,0,10,4);Grid.SetRow(scroll,3);layout.Children.Add(scroll);
             var footer=new Grid{Margin=new Thickness(16,8,14,11)};footer.ColumnDefinitions.Add(new ColumnDefinition());footer.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});Grid.SetRow(footer,4);layout.Children.Add(footer);footer.Children.Add(summary);
-            clear=Theme.Button("清除完成","移出当前列表，最近完成中仍然保留",64);clear.FontSize=11;clear.Height=22;clear.Click+=(o,e)=>{engine.ClearFinished(selectedPlatform);Refresh();};Grid.SetColumn(clear,1);footer.Children.Add(clear);
+            var footerActions=new StackPanel{Orientation=Orientation.Horizontal};
+            Grid.SetColumn(footerActions,1);footer.Children.Add(footerActions);
+            foldAll=Theme.Button("全部折叠","折叠或展开当前视图中的项目文件夹",60);
+            foldAll.Height=22;foldAll.FontSize=11;foldAll.Foreground=Theme.Ink;
+            foldAll.Click+=(o,e)=>ToggleAllFolders();
+            var foldFrame=new Border{Child=foldAll,CornerRadius=new CornerRadius(5),Background=Theme.B("#EDF1EA"),Margin=new Thickness(3,0,3,0)};
+            footerActions.Children.Add(foldFrame);
+            clear=Theme.Button("清除完成","移出当前列表，最近完成中仍然保留",64);clear.FontSize=11;clear.Height=22;clear.Click+=(o,e)=>{engine.ClearFinished(selectedPlatform);Refresh();};footerActions.Children.Add(clear);
             var grip=new Thumb{Width=10,Height=12,HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Bottom,Cursor=Cursors.SizeWE,Opacity=.15,Margin=new Thickness(0,0,3,3)};
             grip.DragDelta+=(o,e)=>{Width=Math.Max(330,Math.Min(640,Width+e.HorizontalChange));};grip.DragCompleted+=(o,e)=>SaveSettings();outer.Children.Add(grip);
             tray=new Forms.NotifyIcon{Icon=System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location),Visible=!Program.RenderOnly,Text="一泽的 AI Agent 任务监控"};
@@ -259,16 +272,44 @@ namespace CodexFloat {
             showingRecent=history;signature="tab-changed";Refresh();double offset=history?recentScroll:currentScroll;
             Dispatcher.BeginInvoke(new Action(()=>scroll.ScrollToVerticalOffset(offset)),DispatcherPriority.Loaded);
         }
-        void ToggleRecentFolder(string key){
-            if(!collapsedRecentFolders.Remove(key))collapsedRecentFolders.Add(key);
-            settings.CollapsedRecentFolders=collapsedRecentFolders.OrderBy(k=>k,StringComparer.OrdinalIgnoreCase).ToList();SaveSettings();
-            signature="folder-toggled";Refresh();
+        static HashSet<string> SavedKeys(List<string> keys){
+            return new HashSet<string>(keys??new List<string>(),StringComparer.OrdinalIgnoreCase);
+        }
+        static void ToggleKey(HashSet<string> keys,string key){
+            if(!keys.Remove(key))keys.Add(key);
+        }
+        void SaveListPreferences(){
+            settings.CollapsedRecentFolders=collapsedRecentFolders.ToList();
+            settings.CollapsedCurrentFolders=collapsedCurrentFolders.ToList();
+            settings.PinnedFolders=pinnedFolders.ToList();
+            settings.PinnedSessions=pinnedSessions.ToList();
+            SaveSettings();signature="list-preferences-changed";Refresh();
+        }
+        void ToggleAllFolders(){
+            var keys=displayed.Select(FolderKey).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if(keys.Count==0)return;
+            if(keys.All(CollapsedFolders.Contains))CollapsedFolders.ExceptWith(keys);
+            else CollapsedFolders.UnionWith(keys);
+            SaveListPreferences();
+        }
+        ContextMenu PinMenu(HashSet<string> pins,string key,string kind){
+            var menu=Theme.Menu();
+            var item=new MenuItem{Header=(pins.Contains(key)?"取消置顶":"置顶")+kind};
+            item.Click+=(o,e)=>{ToggleKey(pins,key);SaveListPreferences();};
+            menu.Items.Add(item);return menu;
+        }
+        static UIElement WithPinMark(TextBlock label,bool pinned){
+            if(!pinned)return label;
+            var panel=new DockPanel();
+            var mark=new Border{Background=Theme.B("#E2EBDF"),CornerRadius=new CornerRadius(4),Padding=new Thickness(4,1,4,1),
+                Margin=new Thickness(3,0,4,0),VerticalAlignment=VerticalAlignment.Center,Child=Theme.Text("置顶",9,Theme.B("#49674B"))};
+            panel.Children.Add(mark);panel.Children.Add(label);return panel;
         }
         ContextMenu BuildMenu(){var m=Theme.Menu();m.Items.Add(new MenuItem{Header="监控平台",IsEnabled=false});AddCheck(m,"Codex",settings.MonitorCodex,()=>{settings.MonitorCodex=!settings.MonitorCodex;UpdatePlatforms();});AddCheck(m,"WorkBuddy",settings.MonitorWorkBuddy,()=>{settings.MonitorWorkBuddy=!settings.MonitorWorkBuddy;UpdatePlatforms();});AddCheck(m,"Claude 桌面端 Code",settings.MonitorClaude,()=>{settings.MonitorClaude=!settings.MonitorClaude;UpdatePlatforms();});AddCheck(m,"Antigravity",settings.MonitorAntigravity,()=>{settings.MonitorAntigravity=!settings.MonitorAntigravity;UpdatePlatforms();});m.Items.Add(new Separator());AddCheck(m,"始终置顶",settings.AlwaysOnTop,()=>ToggleTopmost());AddCheck(m,"完成时播放提示音",settings.Sound,()=>{settings.Sound=!settings.Sound;SaveSettings();});AddCheck(m,"完成时弹出提醒",settings.Notifications,()=>{settings.Notifications=!settings.Notifications;SaveSettings();});m.Items.Add(new Separator());
             var test=new MenuItem{Header="测试完成提醒"};test.Click+=(o,e)=>OnCompleted(new List<Session>{new Session{Title="提醒已开启",Cwd="一泽的 AI Agent 任务监控",Status="completed"}});m.Items.Add(test);
             var reset=new MenuItem{Header="重置窗口位置"};reset.Click+=(o,e)=>{settings.Left=-99999;settings.Top=-99999;PositionWindow();SaveSettings();};m.Items.Add(reset);
             var startup=new MenuItem{Header="开机自动启动",IsCheckable=true,IsChecked=StartupEnabled()};startup.Click+=(o,e)=>SetStartup(startup.IsChecked);m.Items.Add(startup);
-            m.Items.Add(new Separator());var about=new MenuItem{Header="关于 / 使用说明"};about.Click+=(o,e)=>MessageBox.Show(this,"一泽的 AI Agent 任务监控 1.7.2\n\n支持 Codex / WorkBuddy / Claude 桌面端 Code / Antigravity，在菜单中勾选监控平台。\n新一轮开始会自动加入列表。\n绿色代表本轮结束，点击标题打开对应对话。\n中断不会标为完成；状态待确认时不会误报。\n完成记录在「最近完成」保留最近 200 条。\n当前和完成列表自动保存在本地，启动后重新检测。\n右键已完成会话可「加入完成」并单独移出当前。\n拖动顶部移动；右下角调整宽度。\n\n仅在本机读取会话元数据，无网络请求。\n配置与监控记录："+Program.DataDir+"\n\n项目：github.com/YizeAINative/yize-codex-monitor\n参考：github.com/LH-03/agent-monitor-hud", "关于一泽的 AI Agent 任务监控");m.Items.Add(about);
+            m.Items.Add(new Separator());var about=new MenuItem{Header="关于 / 使用说明"};about.Click+=(o,e)=>MessageBox.Show(this,"一泽的 AI Agent 任务监控 1.7.3\n\n支持 Codex / WorkBuddy / Claude 桌面端 Code / Antigravity，在菜单中勾选监控平台。\n新一轮开始会自动加入列表。\n绿色代表本轮结束，点击标题打开对应对话。\n中断不会标为完成；状态待确认时不会误报。\n完成记录在「最近完成」保留最近 200 条。\n当前和完成列表自动保存在本地，启动后重新检测。\n右键已完成会话可「加入完成」并单独移出当前。\n拖动顶部移动；右下角调整宽度。\n\n仅在本机读取会话元数据，无网络请求。\n配置与监控记录："+Program.DataDir+"\n\n项目：github.com/YizeAINative/yize-codex-monitor\n参考：github.com/LH-03/agent-monitor-hud", "关于一泽的 AI Agent 任务监控");m.Items.Add(about);
             var exit=new MenuItem{Header="退出软件"};exit.Click+=(o,e)=>Exit();m.Items.Add(exit);return m;}
         void AddCheck(ContextMenu m,string name,bool check,Action action){var item=new MenuItem{Header=name,IsCheckable=true,IsChecked=check};item.Click+=(o,e)=>action();m.Items.Add(item);}
         bool StartupEnabled(){using(var key=Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))return key!=null&&key.GetValue("CodexFloat")!=null;}
@@ -289,14 +330,14 @@ namespace CodexFloat {
         void UpdateView(){
             latest=Program.Demo?DemoSessions().Where(s=>platformFilters[s.Platform].Visibility==Visibility.Visible).ToList():engine.Snapshot();
             recent=Program.Demo?DemoHistory():engine.RecentCompleted();
-            displayed=showingRecent?recent:selectedPlatform==""?latest:latest.Where(s=>s.Platform==selectedPlatform).ToList();
+            var source=showingRecent?recent:latest;
+            displayed=selectedPlatform==""?source:source.Where(s=>s.Platform==selectedPlatform).ToList();
             currentTab.Content="当前任务  "+latest.Count;recentTab.Content="最近完成  "+recent.Count;currentTab.IsChecked=!showingRecent;recentTab.IsChecked=showingRecent;clear.Visibility=showingRecent?Visibility.Collapsed:Visibility.Visible;
-            platformFilterBar.Visibility=showingRecent?Visibility.Collapsed:Visibility.Visible;
             foreach(var pair in platformFilters)pair.Value.IsChecked=pair.Key==selectedPlatform;
             string platformLabel=(string)platformFilters[selectedPlatform].Content;
             clear.ToolTip=selectedPlatform==""?"移出当前列表，最近完成中仍然保留":"移出 "+platformLabel+" 的已结束任务，最近完成中仍然保留";
             if(showingRecent){
-                summary.Text=engine.HistoryError!=""?engine.HistoryError:"最近 "+recent.Count+" 个会话 · 清除当前列表后仍保留";
+                summary.Text=engine.HistoryError!=""?engine.HistoryError:"最近 "+displayed.Count+" 个会话 · 清除当前列表后仍保留";
             }else if(engine.CurrentError!=""){
                 summary.Text=engine.CurrentError;
             }else if(!Program.Demo&&engine.Rechecking){
@@ -313,7 +354,7 @@ namespace CodexFloat {
         }
         void Refresh(){
             UpdateView();
-            string sig=(showingRecent?"recent:":"current:"+selectedPlatform+":")+string.Join("|",displayed.Select(s=>s.Key+"/"+s.TurnId+"/"+s.Label+"/"+s.Group+"/"+s.Status+"/"+s.StartedAt.Ticks+"/"+s.FinishedAt.Ticks));
+            string sig=(showingRecent?"recent:":"current:")+selectedPlatform+":"+string.Join("|",displayed.Select(s=>s.Key+"/"+s.TurnId+"/"+s.Label+"/"+s.Group+"/"+s.Cwd+"/"+s.Status+"/"+s.StartedAt.Ticks+"/"+s.FinishedAt.Ticks));
             int running=latest.Count(s=>s.Status=="running"),done=latest.Count(s=>s.Status=="completed");
             tray.Text="一泽的 AI Agent 任务监控 · "+running+" 处理中 · "+done+" 完成";
             if(sig!=signature||list.Children.Count==0){signature=sig;BuildList();if(Program.EvidenceDir!=""&&ready)Dispatcher.BeginInvoke(new Action(()=>Capture(Path.Combine(Program.EvidenceDir,"window.png"))),DispatcherPriority.ContextIdle);}
@@ -321,9 +362,11 @@ namespace CodexFloat {
             if((DateTime.UtcNow-lastStatusExport).TotalSeconds>=5){try{Json.Save(Path.Combine(Program.DataDir,"status.json"),new {updatedAt=DateTime.UtcNow,health=engine.Health,running=running,completed=done,sessions=latest});}catch{}lastStatusExport=DateTime.UtcNow;}
         }
         void BuildList(){double old=scroll.VerticalOffset;list.Children.Clear();runtimeLabels.Clear();
+            foldAll.IsEnabled=displayed.Count>0;
+            foldAll.Content=displayed.Count>0&&displayed.All(s=>CollapsedFolders.Contains(FolderKey(s)))?"全部展开":"全部折叠";
             if(displayed.Count==0){
                 var empty=new StackPanel{Margin=new Thickness(18,27,18,32)};
-                string title=showingRecent?"暂无完成记录":selectedPlatform==""?"等待新的任务":platformFilters[selectedPlatform].Content+" 暂无任务";
+                string title=showingRecent?(selectedPlatform==""?"暂无完成记录":platformFilters[selectedPlatform].Content+" 暂无完成记录"):selectedPlatform==""?"等待新的任务":platformFilters[selectedPlatform].Content+" 暂无任务";
                 var line=Theme.Text(title,14,Theme.Ink);line.HorizontalAlignment=HorizontalAlignment.Center;empty.Children.Add(line);
                 string hint=showingRecent?"任务完成后自动保存，清除当前列表也能找回":
                     platformFilterBar.Children.OfType<ToggleButton>().Any(b=>b!=platformFilters[""]&&b.Visibility==Visibility.Visible)?"开始执行后，任务会自动出现在这里":"请在右上角设置中勾选监控平台";
@@ -333,32 +376,36 @@ namespace CodexFloat {
                 bool buddy=platformGroup.Key=="workbuddy",claude=platformGroup.Key=="claude",agy=platformGroup.Key==AntigravitySource.Platform;
                 var card=new Border{CornerRadius=new CornerRadius(8),BorderThickness=new Thickness(1),BorderBrush=Theme.B(agy?"#E0DDF2":claude?"#EEDFCF":buddy?"#DEE6EC":"#E0E6DB"),Background=Theme.B(agy?"#F6F3FC":claude?"#FCF5ED":buddy?"#F3F6F9":"#F4F7F0"),Margin=new Thickness(0,3,0,8),Padding=new Thickness(7,8,7,7)};
                 var body=new StackPanel();card.Child=body;var platformTitle=Theme.Text(platformGroup.First().PlatformName,11,Theme.B(agy?"#7564A3":claude?"#AC8156":buddy?"#6B8193":"#718366"));platformTitle.FontWeight=FontWeights.SemiBold;platformTitle.Margin=new Thickness(8,0,8,2);body.Children.Add(platformTitle);
-                if(showingRecent){
-                    foreach(var folder in platformGroup.GroupBy(s=>HistoryFolderKey(s),StringComparer.OrdinalIgnoreCase).OrderByDescending(g=>g.Max(s=>s.FinishedAt))){
-                        var session=folder.OrderByDescending(s=>s.FinishedAt).First();string key=platformGroup.Key+"|"+folder.Key;bool collapsed=collapsedRecentFolders.Contains(key);
-                        body.Children.Add(RecentFolderHeader(session,folder.Count(),key,collapsed));
-                        if(!collapsed)foreach(var entry in folder.OrderByDescending(s=>s.FinishedAt))body.Children.Add(Row(entry,true));
-                    }list.Children.Add(card);continue;
+                Func<Session,DateTime> timestamp=s=>showingRecent?s.FinishedAt:s.StartedAt;
+                var folders=platformGroup.GroupBy(FolderKey,StringComparer.OrdinalIgnoreCase)
+                    .OrderByDescending(g=>pinnedFolders.Contains(g.Key)).ThenByDescending(g=>g.Max(timestamp));
+                foreach(var folder in folders){
+                    var latestEntry=folder.OrderByDescending(timestamp).First();
+                    bool folded=CollapsedFolders.Contains(folder.Key);
+                    body.Children.Add(FolderHeader(latestEntry,folder.Count(),folder.Key,folded));
+                    if(folded)continue;
+                    foreach(var entry in folder.OrderByDescending(s=>pinnedSessions.Contains(s.Key)).ThenByDescending(timestamp))
+                        body.Children.Add(Row(entry,showingRecent));
                 }
-                foreach(var group in platformGroup.GroupBy(s=>s.Cwd+"|"+s.Group).OrderByDescending(g=>g.Max(s=>s.StartedAt))){
-                    var project=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(8,9,8,4)};project.Children.Add(new FolderMark());var label=Theme.Text(group.First().Group,13,Theme.Ink);label.Margin=new Thickness(8,0,0,0);label.MaxWidth=Width-110;label.ToolTip=group.First().Cwd;project.Children.Add(label);body.Children.Add(project);
-                    foreach(var session in group.OrderByDescending(s=>s.StartedAt))body.Children.Add(Row(session));
-                }list.Children.Add(card);
+                list.Children.Add(card);
             }scroll.ScrollToVerticalOffset(old);
         }
         static string HistoryFolderKey(Session s){return string.IsNullOrWhiteSpace(s.Cwd)?"session:"+s.Id:s.Cwd.Replace('/','\\').TrimEnd('\\');}
-        Button RecentFolderHeader(Session session,int count,string key,bool collapsed){
+        static string FolderKey(Session s){return (s.Platform??"codex")+"|"+HistoryFolderKey(s);}
+        Button FolderHeader(Session session,int count,string key,bool collapsed){
             var button=new Button{Padding=new Thickness(0),BorderThickness=new Thickness(0),Background=Brushes.Transparent,HorizontalContentAlignment=HorizontalAlignment.Stretch,Cursor=Cursors.Hand,Margin=new Thickness(0,4,0,3),ToolTip=collapsed?"点击展开文件夹":"点击收起文件夹"};
             System.Windows.Automation.AutomationProperties.SetName(button,session.Group+"，"+(collapsed?"已折叠":"已展开")+"，"+count+" 个会话");
             var template=new ControlTemplate(typeof(Button));var content=new FrameworkElementFactory(typeof(ContentPresenter));content.SetValue(ContentPresenter.HorizontalAlignmentProperty,HorizontalAlignment.Stretch);template.VisualTree=content;button.Template=template;
             var border=new Border{CornerRadius=new CornerRadius(5),Padding=new Thickness(8,5,8,5),Background=Brushes.Transparent};button.Content=border;
             var row=new Grid();row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(16)});row.ColumnDefinitions.Add(new ColumnDefinition());row.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(20)});border.Child=row;row.Children.Add(new FolderMark());
-            var name=Theme.Text(session.Group,12,Theme.Ink);name.Margin=new Thickness(8,0,8,0);name.ToolTip=session.Cwd;Grid.SetColumn(name,1);row.Children.Add(name);
+            var name=Theme.Text(session.Group,12,Theme.Ink);name.Margin=new Thickness(8,0,8,0);name.ToolTip=session.Cwd;
+            var folderName=WithPinMark(name,pinnedFolders.Contains(key));Grid.SetColumn(folderName,1);row.Children.Add(folderName);
             var number=Theme.Text(count+" 个会话",10,Theme.Muted);Grid.SetColumn(number,2);row.Children.Add(number);
             var arrow=Theme.Text(collapsed?"▸":"▾",11,Theme.Muted);arrow.HorizontalAlignment=HorizontalAlignment.Right;Grid.SetColumn(arrow,3);row.Children.Add(arrow);
             var hover=Theme.B(session.Platform=="claude"?"#F8EEDF":session.Platform=="workbuddy"?"#EAF0F6":"#EDF2E6");
             button.MouseEnter+=(o,e)=>border.Background=hover;button.MouseLeave+=(o,e)=>border.Background=Brushes.Transparent;
-            button.Click+=(o,e)=>ToggleRecentFolder(key);return button;
+            button.ContextMenu=PinMenu(pinnedFolders,key,"项目文件夹");
+            button.Click+=(o,e)=>{ToggleKey(CollapsedFolders,key);SaveListPreferences();};return button;
         }
         static string CompletedAt(Session s){return s.FinishedAt.ToLocalTime().ToString("MM-dd HH:mm");}
         UIElement Row(Session session,bool historical=false){
@@ -372,13 +419,16 @@ namespace CodexFloat {
             var border=new Border{CornerRadius=new CornerRadius(6),Background=rowRest,Padding=new Thickness(34,9,10,9)};button.Content=border;
             var row=new Grid();row.ColumnDefinitions.Add(new ColumnDefinition());row.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});border.Child=row;
             var title=Theme.Text(session.Label,13,Theme.B("#62665F"));title.Margin=new Thickness(0,0,10,0);
-            if(historical){var text=new StackPanel();text.Children.Add(title);var when=Theme.Text(CompletedAt(session),10,Theme.Muted);when.Margin=new Thickness(0,4,0,0);when.ToolTip="完成于 "+session.FinishedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");text.Children.Add(when);row.Children.Add(text);}else row.Children.Add(title);
+            var sessionName=WithPinMark(title,pinnedSessions.Contains(session.Key));
+            if(historical){var text=new StackPanel();text.Children.Add(sessionName);var when=Theme.Text(CompletedAt(session),10,Theme.Muted);when.Margin=new Thickness(0,4,0,0);when.ToolTip="完成于 "+session.FinishedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");text.Children.Add(when);row.Children.Add(text);}else row.Children.Add(sessionName);
             var state=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};Grid.SetColumn(state,1);row.Children.Add(state);var runtime=Theme.Text(session.RuntimeText(DateTime.UtcNow),11,Theme.Muted);runtime.FontFamily=new FontFamily("Consolas");runtime.Margin=new Thickness(0,0,8,0);runtime.ToolTip="本轮运行时间 · 完成后停止计时";state.Children.Add(runtime);if(!historical)runtimeLabels[session.Key]=runtime;state.Children.Add(new StatusMark(session.Status));
             if(session.Status!="running"){var t=Theme.Text(session.Status=="completed"?"完成":session.Status=="interrupted"?"已中断":session.Status=="failed"?"失败":session.Status=="waiting"?"等待输入":"待确认",11,session.Status=="completed"?Theme.Green:Theme.B("#A58B5A"));t.Margin=new Thickness(5,0,0,0);state.Children.Add(t);}
             button.MouseEnter+=(o,e)=>border.Background=rowHover;button.MouseLeave+=(o,e)=>border.Background=rowRest;
             button.Click+=(o,e)=>OpenSession(session);
+            var cm=PinMenu(pinnedSessions,session.Key,"会话");button.ContextMenu=cm;
             if(!historical){
-                var cm=Theme.Menu();var archive=new MenuItem{Header="加入完成",IsEnabled=session.Status=="completed",ToolTip=session.Status=="completed"?"保存到最近完成，并单独移出当前列表":"本轮完成后可加入完成"};
+                cm.Items.Add(new Separator());
+                var archive=new MenuItem{Header="加入完成",IsEnabled=session.Status=="completed",ToolTip=session.Status=="completed"?"保存到最近完成，并单独移出当前列表":"本轮完成后可加入完成"};
                 archive.Click+=(o,e)=>{engine.ArchiveCompleted(session);Refresh();};cm.Items.Add(archive);
                 if(session.Status!="running"&&session.Status!="waiting"&&session.Status!="completed"){var remove=new MenuItem{Header="从当前列表移除"};remove.Click+=(o,e)=>{engine.Dismiss(session);Refresh();};cm.Items.Add(remove);}button.ContextMenu=cm;
             }

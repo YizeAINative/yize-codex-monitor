@@ -47,6 +47,19 @@ namespace CodexFloat {
             entries.Add(copy);entries.Sort((a,b)=>b.FinishedAt.CompareTo(a.FinishedAt));if(entries.Count>Capacity)entries.RemoveRange(Capacity,entries.Count-Capacity);return true;
         }
         public void Record(IEnumerable<Session> items){lock(gate){foreach(var item in items)if(Add(item))dirty=true;Flush();}}
+        internal void ExcludeAntigravityChildren(HashSet<string> ids){
+            lock(gate){
+                if(entries.RemoveAll(s=>s.Platform==AntigravitySource.Platform && ids.Contains(s.Id))>0)dirty=true;
+            }
+        }
+        internal void RefreshAntigravityNames(Dictionary<string,AntigravityName> names){
+            lock(gate){
+                foreach(var entry in entries){
+                    AntigravityName name;
+                    if(entry.Platform==AntigravitySource.Platform && names.TryGetValue(entry.Id,out name) && name.Apply(entry))dirty=true;
+                }
+            }
+        }
         public List<Session> Snapshot(){lock(gate)return entries.Select(e=>e.Copy()).ToList();}
         public static List<Session> LatestPerSession(IEnumerable<Session> source){
             return source.GroupBy(s=>s.Key,StringComparer.OrdinalIgnoreCase)

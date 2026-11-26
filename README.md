@@ -6,11 +6,17 @@
 
 | 系统 | 版本与下载 |
 | --- | --- |
-| Windows | [v1.7.2 便携包](https://github.com/YizeAINative/yize-codex-monitor/releases/download/v1.7.2/Yize-AI-Agent-Monitor-1.7.2.zip)，解压后运行 `CodexFloat.exe`。 |
+| Windows | [v1.7.3 便携包](https://github.com/YizeAINative/yize-codex-monitor/releases/download/v1.7.3/Yize-AI-Agent-Monitor-1.7.3.zip)，解压后运行 `CodexFloat.exe`。 |
 | Mac · Apple Silicon | [v1.7.0 Apple Silicon 版](https://github.com/YizeAINative/yize-codex-monitor/releases/download/v1.7.0/Yize-AI-Agent-Monitor-1.7.0-macOS-arm64.zip)，解压后运行 `Codex Monitor.app`。 |
 | Mac · Intel | [v1.7.0 Intel Mac 版](https://github.com/YizeAINative/yize-codex-monitor/releases/download/v1.7.0/Yize-AI-Agent-Monitor-1.7.0-macOS-x86_64.zip)，解压后运行 `Codex Monitor.app`。 |
 
 Mac 需要 macOS 13+，使用临时签名，尚未进行 Developer ID 公证。操作和构建方法见 [Mac 使用说明](macos/README.md)。以下界面说明以 Windows 版为主。
+
+## v1.7.3 · Windows 列表整理和 Antigravity 主对话识别（2026-11-26）
+
+- 「当前任务」和「最近完成」都支持平台筛选。底部的「全部折叠 / 全部展开」只作用于当前页筛选出的项目。两个页面分别记住折叠状态。
+- 右键项目文件夹或会话可置顶或取消置顶。项目排在所属平台前面，会话排在所属文件夹前面，置顶设置在两页共享并在重启后保留。
+- Antigravity 会核对摘要中的父会话及根会话关系，过滤子对话，并从监控工具的两份本地列表移出已确认的子对话。缺少正式标题时使用简短预览，缺少提问位置时从本地步骤记录核对。
 
 ## v1.7.2 · Windows 平台筛选（2026-11-21）
 
@@ -95,7 +101,7 @@ Claude 适配状态单独保存在 `%LOCALAPPDATA%\CodexFloat\claude-desktop-cod
 
 “开机自动启动”仅在用户勾选时设置当前用户的 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\CodexFloat`。关闭该选项即可取消。便携版启用后请保持 EXE 路径稳定。
 
-本工具当前针对本地 Codex / WorkBuddy / Claude Code 会话。云端或其他电脑未落地到本机的会话不在监控范围。若平台后续改变本地日志或数据库格式，可能需要更新读取逻辑。无法明确识别的状态保持“待确认”。
+本工具支持本地 Codex、WorkBuddy 和 Claude 桌面端 Code，Windows 版也支持 Antigravity 主对话。云端或其他电脑未落地到本机的会话不在监控范围。若平台后续改变本地日志或数据库格式，可能需要更新读取逻辑。无法明确识别的状态保持“待确认”。
 
 ## 构建与验证
 
@@ -109,7 +115,7 @@ Claude 适配状态单独保存在 `%LOCALAPPDATA%\CodexFloat\claude-desktop-cod
 
 使用本机 .NET Framework 编译器，无 NuGet 或 npm 依赖。`CoreTests.exe` 在独立临时目录运行，不修改真实 Codex 数据。
 
-Windows 通过 170 项核心检查和 21 项 WPF 界面交互检查，覆盖状态识别、完成历史、重启恢复和平台筛选。界面检查使用隔离数据，验证设置联动、最窄窗口一行布局，以及筛选时只清除选中平台的已结束任务。
+Windows 通过 178 项核心检查和 29 项 WPF 界面交互检查，覆盖状态识别、完成历史、重启恢复和平台筛选。界面检查使用隔离数据，验证设置联动、最窄窗口一行布局，以及筛选时只清除选中平台的已结束任务。
 
 Mac 使用 `bash macos/test.sh` 和 `bash macos/build.sh`。v1.7.0 已在 GitHub 的 Apple Silicon 与 Intel macOS 环境分别通过 65 项核心检查、应用构建及临时签名校验；Windows 自动检查同样通过，见 [合入前验证记录](https://github.com/YizeAINative/yize-codex-monitor/actions/runs/41949337290)。自动检查使用隔离数据，真实 Agent 的完整操作与登录自启验证范围见 [Mac 验收记录](macos/VERIFICATION.md)。
 

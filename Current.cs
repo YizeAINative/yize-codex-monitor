@@ -56,6 +56,15 @@ namespace CodexFloat {
         }catch{return false;}}
         public bool IsDismissed(Session s){lock(gate){Session old;return dismissed.TryGetValue(s.Key,out old)&&CurrentTaskIdentity.SameRound(old,s);}}
         public List<Session> Snapshot(Func<string,bool> enabled){lock(gate)return items.Values.Where(s=>enabled(s.Platform)).Select(s=>s.Copy()).ToList();}
+        internal void ExcludeAntigravityChildren(HashSet<string> ids){
+            lock(gate){
+                foreach(string id in ids){
+                    string key=AntigravitySource.Platform+":"+id;
+                    if(items.Remove(key))dirty=true;
+                    if(dismissed.Remove(key))dirty=true;
+                }
+            }
+        }
         static string Signature(Session s){return Json.Serializer().Serialize(s);}
         public void Reconcile(IEnumerable<Session> source,Func<string,bool> enabled,Func<Session,bool> confirmActive){lock(gate){
             var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);

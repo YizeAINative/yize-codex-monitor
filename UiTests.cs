@@ -35,8 +35,11 @@ class UiTests {
         Check(Find(window,"完成工具配置，")!=null&&Find(window,"整理项目资料，")==null&&Find(window,"检查页面布局，")==null,
             "platform filter shows only the chosen provider");
         Click(Field<ToggleButton>(window,"recentTab"));
-        Check(bar.Visibility==Visibility.Collapsed&&Find(window,"检查页面布局，")!=null&&Find(window,"运行构建与测试，")!=null,
-            "completion history stays unfiltered and hides the current-task controls");
+        Check(bar.Visibility==Visibility.Visible&&Find(window,"完成工具配置，")!=null&&Find(window,"运行构建与测试，")==null,
+            "history filters by the selected platform");
+        Click(buttons["全部"]);
+        Check(Find(window,"运行构建与测试，")!=null,"All restores history from other platforms");
+        Click(buttons["Claude"]);
         Click(Field<ToggleButton>(window,"currentTab"));
         Check(buttons["Claude"].IsChecked==true&&Find(window,"整理项目资料，")==null,
             "returning to current tasks keeps the selected platform");
@@ -54,6 +57,49 @@ class UiTests {
         Click(buttons["全部"]);
         Check(Find(window,"整理项目资料，")!=null&&Find(window,"运行构建与测试，")!=null,
             "All restores the full list");
+    }
+    static void ChooseMenu(Button button,string title){
+        var item=button.ContextMenu.Items.OfType<MenuItem>().Single(m=>Convert.ToString(m.Header)==title);
+        item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+    }
+    static void FoldAndPinChecks(string data,Session seed){
+        var first=seed.Copy();first.Title="New task";first.Cwd=@"C:\Projects\Newer";
+        var old=seed.Copy();old.Id=Guid.NewGuid().ToString();old.Title="Old task";old.Cwd=@"C:\Projects\Older";
+        old.FinishedAt=first.FinishedAt.AddHours(-2);old.StartedAt=first.StartedAt.AddHours(-2);
+        var sibling=old.Copy();sibling.Id=Guid.NewGuid().ToString();sibling.Title="Sibling";
+        sibling.StartedAt=old.StartedAt.AddMinutes(5);sibling.FinishedAt=old.FinishedAt.AddMinutes(5);
+        var other=old.Copy();other.Platform="workbuddy";other.Title="Other platform";
+        var rows=new List<Session>{first,old,sibling,other};
+        Json.Save(Path.Combine(data,"current-tasks.json"),new CurrentTasksDocument{SavedAt=DateTime.UtcNow,Sessions=rows});
+        new CompletionHistory(data).Record(rows);
+        var window=new MainWindow();var refresh=typeof(MainWindow).GetMethod("Refresh",BindingFlags.Instance|BindingFlags.NonPublic);
+        refresh.Invoke(window,null);
+        var filters=Field<Dictionary<string,ToggleButton>>(window,"platformFilters");Click(filters["codex"]);
+        var all=Field<Button>(window,"foldAll");Click(all);
+        Check((string)all.Content=="全部展开" && Find(window,"Old task，")==null && Find(window,"New task，")==null,"bulk fold hides all visible folder contents");
+        Click(filters["workbuddy"]);Check(Find(window,"Other platform，")!=null,"bulk fold respects platform filter");
+        Click(filters["codex"]);Click(all);
+        ChooseMenu(Find(window,"Older，"),"置顶项目文件夹");
+        ChooseMenu(Find(window,"Old task，"),"置顶会话");
+        Func<MainWindow,string,int> index=(view,prefix)=>{
+            var selected=Find(view,prefix);
+            if(selected==null)throw new Exception("Missing row "+prefix);
+            return Buttons((DependencyObject)view.Content).ToList().IndexOf(selected);
+        };
+        Check(index(window,"Older，")<index(window,"Newer，") && index(window,"Old task，")<index(window,"Sibling，"),"pinned items sort ahead of newer folder and session");
+        Click(Field<ToggleButton>(window,"recentTab"));
+        Check(index(window,"Older，")<index(window,"Newer，") && index(window,"Old task，")<index(window,"Sibling，"),"pins are shared with completion history");
+        Click(all);Click(Field<ToggleButton>(window,"currentTab"));
+        Check(Find(window,"Old task，")!=null,"history bulk fold is independent of current folders");
+        var restored=new MainWindow();refresh.Invoke(restored,null);
+        Click(Field<Dictionary<string,ToggleButton>>(restored,"platformFilters")["codex"]);
+        ChooseMenu(Find(restored,"Old task，"),"取消置顶会话");
+        ChooseMenu(Find(restored,"Older，"),"取消置顶项目文件夹");
+        Check(index(restored,"Newer，")<index(restored,"Older，") &&
+            index(restored,"Sibling，")<index(restored,"Old task，"),
+            "pins survive restart and unpin restores time order");
+        Click(Field<ToggleButton>(restored,"recentTab"));
+        Check((string)Field<Button>(restored,"foldAll").Content=="全部展开" && Find(restored,"Old task，")==null,"bulk folded history survives restart");
     }
     [STAThread] static int Main(){try{
         string root=Path.Combine(Path.GetTempPath(),"YizeUiTests-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);
@@ -89,6 +135,7 @@ class UiTests {
         Click(filters[""]);
         Check(Find(bulkWindow,"Done C，")==null&&Find(bulkWindow,"Done B，")!=null,
             "Clear completed while filtered leaves completed tasks on other platforms");
+        string pinData=Path.Combine(root,"fold-pin");set("DataDir",pinData);FoldAndPinChecks(pinData,a);
         Console.WriteLine("ALL "+passed+" UI CHECKS PASSED\nEvidence: "+root);return 0;
     }catch(Exception ex){Console.Error.WriteLine(ex);return 1;}}
 }

@@ -159,6 +159,9 @@ namespace CodexFloat {
 
     public class Settings {
         public List<string> CollapsedRecentFolders=new List<string>();
+        public List<string> CollapsedCurrentFolders=new List<string>();
+        public List<string> PinnedFolders=new List<string>();
+        public List<string> PinnedSessions=new List<string>();
         public bool MonitorCodex=true, MonitorWorkBuddy=true, MonitorClaude=true, MonitorAntigravity=true;
         public bool Sound=true, Notifications=true, AlwaysOnTop=true;
         public double Left=-99999,Top=-99999,Width=400;

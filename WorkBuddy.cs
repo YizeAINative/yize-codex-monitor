@@ -141,6 +141,9 @@ namespace CodexFloat {
             if(enableAntigravity){
                 if(antigravity==null)antigravity=new AntigravityEngine(antigravityHome,current.Snapshot(p=>p==AntigravitySource.Platform));
                 var notices=antigravity.Poll(RuntimeRunning(AntigravitySource.Platform),DateTime.UtcNow);
+                current.ExcludeAntigravityChildren(antigravity.ChildIds);
+                history.ExcludeAntigravityChildren(antigravity.ChildIds);
+                history.RefreshAntigravityNames(antigravity.Names);
                 if(notices.Count>0)Forward(notices);
             }
             current.Reconcile(SourceSnapshot(),Enabled,ConfirmActive);RememberCompletions();history.Flush();
